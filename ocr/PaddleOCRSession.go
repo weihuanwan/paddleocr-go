@@ -239,11 +239,11 @@ func (session *PaddleOCRSession) Destroy() {
 func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
 	// 初始化 ONNX Runtime
 	if config.OnnxRuntimeLibPath == "" {
-		return nil, fmt.Errorf("OnnxRuntimeLibPath 不能为空")
+		return nil, fmt.Errorf("OnnxRuntimeLibPath is required")
 	}
 	ort.SetSharedLibraryPath(config.OnnxRuntimeLibPath)
 	if err := ort.InitializeEnvironment(); err != nil {
-		return nil, fmt.Errorf("初始化 ONNX Runtime 环境失败: %w", err)
+		return nil, fmt.Errorf("failed to initialize ONNX Runtime environment: %w", err)
 	}
 
 	// 检查和设置默认值
@@ -267,11 +267,11 @@ func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
 	if config.UseCuda {
 		cudaOptions, err := ort.NewCUDAProviderOptions()
 		if err != nil {
-			return nil, fmt.Errorf("new  CUDAProviderOptions error: %w", err)
+			return nil, fmt.Errorf("failed to create CUDA provider options: %w", err)
 		}
 		defer cudaOptions.Destroy()
 		if err := options.AppendExecutionProviderCUDA(cudaOptions); err != nil {
-			return nil, fmt.Errorf("add CUDAProviderOptions error: %w", err)
+			return nil, fmt.Errorf("failed to append CUDA execution provider: %w", err)
 		}
 	}
 
@@ -285,7 +285,7 @@ func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
 
 	if err != nil {
 		clsSessionInternal.Destroy()
-		return nil, fmt.Errorf("create cls session error: %w", err)
+		return nil, fmt.Errorf("failed to create classification session: %w", err)
 	}
 
 	// 创建检测模型
@@ -297,7 +297,7 @@ func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
 	)
 	if err != nil {
 		detSessionInternal.Destroy()
-		return nil, fmt.Errorf("create det session error: %w", err)
+		return nil, fmt.Errorf("failed to create detection session: %w", err)
 	}
 
 	// 创建识别会话
@@ -309,13 +309,13 @@ func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
 	)
 	if err != nil {
 		recSessionInternal.Destroy() // 清理已创建的 det session
-		return nil, fmt.Errorf("create rec session error: %w", err)
+		return nil, fmt.Errorf("failed to create recognition session: %w", err)
 	}
 
 	// 加载字典
 	dict, err := loadDictFile(config.DictPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load dictionary file: %w", err)
 	}
 	detSession := &DetOnnxSession{detSessionInternal, config}
 	recSession := &RecOnnxSession{recSessionInternal, config, dict}
@@ -335,7 +335,7 @@ func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
 func loadDictFile(path string) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("无法打开字典文件 %s: %w", path, err)
+		return nil, fmt.Errorf("open dictionary file (%s): %w", path, err)
 	}
 	defer file.Close()
 	var lines []string
@@ -345,7 +345,7 @@ func loadDictFile(path string) ([]string, error) {
 		lines = append(lines, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("读取字典文件时出错: %w", err)
+		return nil, fmt.Errorf("scan dictionary file (%s): %w", path, err)
 	}
 	lines = append(lines, " ")
 	return lines, nil
