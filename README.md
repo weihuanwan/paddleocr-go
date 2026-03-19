@@ -32,7 +32,7 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
    	"sort"
    	"time"
    
-   	"github.com/weihuanwan/paddle-ocr-go/ocr"
+   	"github.com/weihuanwan/paddleocr-go/ocr"
    )
    
    type OCRItem struct {
@@ -44,7 +44,7 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
    	// 开始计时
    	start := time.Now()
    	config := ocr.NewDefaultPaddleOCRConfig(
-   		"./lib/onnxruntime.dll",
+   		"C:\\Users\\Administrator\\Downloads\\onnxruntime-win-x64-gpu-1.24.1\\onnxruntime-win-x64-gpu-1.24.1\\lib\\onnxruntime.dll",
    		"./model/det.onnx",
    		"./model/rec.onnx",
    		"./model/cls.onnx",
@@ -54,7 +54,6 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
    	)
    
    	session, err := ocr.NewPaddleOCRSession(config)
-   	//session.Init()
    	if err != nil {
    		log.Fatalf("create ocr session: %v\n", err)
    	}
@@ -66,8 +65,11 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
    	// 检测
    	ocrResult, _ := session.RunOCR(imagePath)
    
-   	// 创建一个结构体来存储配对的结果
+   	// 结束计时
+   	cost := time.Since(start)
+   	log.Printf("OCR耗时: %v\n", cost)
    
+   	// 创建一个结构体来存储配对的结果
    	items := make([]OCRItem, len(ocrResult.DetResult))
    	for i := 0; i < len(ocrResult.DetResult); i++ {
    		items[i] = OCRItem{
@@ -87,9 +89,6 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
    		fmt.Printf("   坐标: %v\n", item.Points)
    	}
    
-   	// 结束计时
-   	cost := time.Since(start)
-   	log.Printf("OCR耗时: %v\n", cost)
    }
    func centerY(points []image.Point) int {
    	return (points[0].Y + points[2].Y) / 2
@@ -154,6 +153,6 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
    }
    
    ```
-
    
+
 
