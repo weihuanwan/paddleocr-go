@@ -1,0 +1,6 @@
+github.com/cwbudde/go-clipper2 v0.0.0-20260301105210-78da178587e9 h1:0EmXxh7FXw4WFaOo8cjMdV3+3MgZAOLbNeiPiY21kqM=
+github.com/cwbudde/go-clipper2 v0.0.0-20260301105210-78da178587e9/go.mod h1:fOp5ldymzJexqhB0oX0fvPXWsw29tWQBxhFmN4E0kgY=
+github.com/yalue/onnxruntime_go v1.27.0 h1:c1YSgDNtpf0WGtxj3YeRIb8VC5LmM1J+Ve3uHdteC1U=
+github.com/yalue/onnxruntime_go v1.27.0/go.mod h1:b4X26A8pekNb1ACJ58wAXgNKeUCGEAQ9dmACut9Sm/4=
+gocv.io/x/gocv v0.43.0 h1:PFNpRUcV8fgBRDbVHHN+4BDZjjPnVveo5N/+e15BTuA=
+gocv.io/x/gocv v0.43.0/go.mod h1:zYdWMj29WAEznM3Y8NsU3A0TRq/wR/cy75jeUypThqU=
