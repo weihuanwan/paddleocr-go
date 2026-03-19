@@ -8,7 +8,6 @@ import (
 	"log"
 	"math"
 	"os"
-	"path/filepath"
 	"sync"
 
 	ort "github.com/yalue/onnxruntime_go"
@@ -159,25 +158,24 @@ func (session *PaddleOCRSession) rotateImage(img *gocv.Mat, clsResult *ClsResult
 // RunOCR 对图像执行检测和识别
 func (session *PaddleOCRSession) RunOCR(imagePath string) (*OcrResult, error) {
 
-	imgMat, err := LoadImage(imagePath)
+	imgMat, fileName, err := LoadImage(imagePath)
 
 	if err != nil {
 		return nil, err
 	}
-	img := imgMat
-	defer img.Close()
-	fileName := filepath.Base(imagePath)
+
+	defer imgMat.Close()
+
 	// 1.方向
-	clsResult, err := session.clsSession.Run(img)
+	clsResult, err := session.clsSession.Run(imgMat)
 	if err != nil {
 		return nil, err
 	}
-
-	rotateImage := img
+	rotateImage := imgMat
 	// 不等于0 证明需要旋转图片
 	if clsResult.Index != 0 {
 		// 2 旋转图片
-		rotateImage, err = session.rotateImage(img, clsResult)
+		rotateImage, err = session.rotateImage(imgMat, clsResult)
 		if err != nil {
 			return nil, err
 		}
