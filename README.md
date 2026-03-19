@@ -1,5 +1,6 @@
 paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX Runtime 与 GOCV 构建，深度集成 PaddleOCR（PPOCR）模型能力。
 提供从方向分类、文本检测、文本识别的完整流程封装，开箱即用，兼顾性能与扩展性，适用于服务端 OCR、自动化处理及高并发场景
+
 # 环境准备
 
 1. 安装 gocv
@@ -7,7 +8,7 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
 2. 下载 onnxruntime
    - 地址：https://github.com/microsoft/onnxruntime
    - 版本：onnxruntime-xxx-1.24.1
-3. 准备 PaddleOCR ONNX 模型
+3. 准备 PaddleOCR ONNX  模型
    - 地址1：https://github.com/PaddlePaddle/PaddleOCR
    - 地址2：https://github.com/weihuanwan/paddle-ocr-model
 
@@ -153,4 +154,8 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
    ```
    
 
+# 示例效果
 
+|                             原图                             |                            检测图                            |
+| :----------------------------------------------------------: | :----------------------------------------------------------: |
+| ![](https://github.com/weihuanwan/paddle-ocr-model/blob/main/test.jpg?raw=true) | ![](https://github.com/weihuanwan/paddle-ocr-model/blob/main/det_result_test.jpg?raw=true) |
