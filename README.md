@@ -59,7 +59,7 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
    
    	defer session.Destroy()
    
-   	imagePath := "./test.jpg"
+   	imagePath := "https://github.com/weihuanwan/paddle-ocr-model/blob/main/test.jpg?raw=true"
    
    	// 检测
    	ocrResult, _ := session.RunOCR(imagePath)
