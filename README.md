@@ -8,7 +8,8 @@ paddle-ocr-go 是一款基于 Golang + ONNX + GOCV 构建的 OCR 工具库，专
    - 地址：https://github.com/microsoft/onnxruntime
    - 版本：onnxruntime-xxx-1.24.1
 3. 准备 PaddleOCR ONNX 模型
-   - 地址：https://github.com/PaddlePaddle/PaddleOCR
+   - 地址1：https://github.com/PaddlePaddle/PaddleOCR
+   - 地址2：https://github.com/weihuanwan/paddle-ocr-model
 
 # 快速开始
 
