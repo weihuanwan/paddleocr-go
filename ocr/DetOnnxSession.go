@@ -530,10 +530,9 @@ func (det DetOnnxSession) extractBoxes(heatmap []float32, ratio []int) ([]*DetRe
 		if score < det.Config.BoxThresh {
 			continue
 		}
-		//
+		// 扩充
 		pv2 := unclip(p, det.Config.UnclipRatio)
 
-		//
 		boxs, side := getMiniBoxes(pv2)
 		if side < det.Config.MinSize+2 {
 			continue
