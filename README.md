@@ -4,10 +4,10 @@ paddle-ocr-go 是一款基于 Golang + ONNX + GOCV 构建的 OCR 工具库，专
 
 1. 安装 gocv
    - 地址 ：https://gocv.io/getting-started
-2. 下载 onnx
+2. 下载 onnxruntime
    - 地址：https://github.com/microsoft/onnxruntime
    - 版本：onnxruntime-xxx-1.24.1
-3. 准备 PaddleOCR onnx 模型
+3. 准备 PaddleOCR ONNX 模型
    - 地址：https://github.com/PaddlePaddle/PaddleOCR
 
 # 快速开始
