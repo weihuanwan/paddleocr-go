@@ -79,7 +79,7 @@ func (cls *ClsOnnxSession) Run(image *gocv.Mat) (*ClsResult, error) {
 	}
 	label := cls.config.ClsMap[maxIdx]
 	if cls.config.UseLog {
-		log.Printf("cls label %d score %d", label, maxScore)
+		log.Printf("cls label %d score %f", label, maxScore)
 	}
 
 	return &ClsResult{
