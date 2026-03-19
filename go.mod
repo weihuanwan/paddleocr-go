@@ -1,4 +1,4 @@
-module github.com/weihuanwan/PaddleOCR-Go
+module github.com/weihuanwan/paddleocr-go
 
 go 1.25
 

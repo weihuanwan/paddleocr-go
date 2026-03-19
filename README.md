@@ -1,5 +1,6 @@
-paddle-ocr-go 是一款基于 Golang + ONNX + GOCV 构建的 OCR 工具库，专注于为 Go 生态提供简单易用、可扩展的文字识别能力。 目前已完成与 PaddleOCR 的对接，支持快速实现图像文字检测与识别。
+paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX Runtime 与 GOCV 构建，深度集成 PaddleOCR（PPOCR）模型能力。
 
+提供从文本检测、方向分类到文本识别的完整流程封装，开箱即用，兼顾性能与扩展性，适用于服务端 OCR、自动化处理及高并发场景
 # 环境准备
 
 1. 安装 gocv
