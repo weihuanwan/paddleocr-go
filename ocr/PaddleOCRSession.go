@@ -9,10 +9,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
 )
+
+var ortOnce sync.Once
 
 /*
 *
@@ -235,100 +238,143 @@ func (session *PaddleOCRSession) Destroy() {
 	}
 
 }
+func initOrt(libPath string) error {
+	var err error
+	ortOnce.Do(func() {
+		ort.SetSharedLibraryPath(libPath)
+		err = ort.InitializeEnvironment()
+	})
+	return err
+}
 
 func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
-	// 初始化 ONNX Runtime
+
+	// ✅ 基础校验
 	if config.OnnxRuntimeLibPath == "" {
 		return nil, fmt.Errorf("OnnxRuntimeLibPath is required")
 	}
-	ort.SetSharedLibraryPath(config.OnnxRuntimeLibPath)
-	if err := ort.InitializeEnvironment(); err != nil {
-		return nil, fmt.Errorf("failed to initialize ONNX Runtime environment: %w", err)
+	if config.ClsModelPath == "" {
+		return nil, fmt.Errorf("classification model path is required")
+	}
+	if config.DetModelPath == "" {
+		return nil, fmt.Errorf("detection model path is required")
+	}
+	if config.RecModelPath == "" {
+		return nil, fmt.Errorf("recognition model path is required")
+	}
+	if config.DictPath == "" {
+		return nil, fmt.Errorf("dictionary path is required")
 	}
 
-	// 检查和设置默认值
-	if config.DetModelPath == "" || config.RecModelPath == "" || config.DictPath == "" {
-		return nil, fmt.Errorf("模型路径和字典路径不能为空")
+	// ✅ 初始化 ONNX（只执行一次）
+	if err := initOrt(config.OnnxRuntimeLibPath); err != nil {
+		return nil, fmt.Errorf("initialize ONNX Runtime: %w", err)
 	}
 
-	// 创建会话选项 (设置线程)
+	// ✅ session options
 	options, err := ort.NewSessionOptions()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create session options: %w", err)
 	}
+	defer options.Destroy()
+
 	if config.NumThreads > 0 {
-		// 设置线程
 		if err := options.SetIntraOpNumThreads(config.NumThreads); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("set intra-op threads: %w", err)
 		}
 	}
 
-	// 启用CUDA
+	// ✅ CUDA
 	if config.UseCuda {
 		cudaOptions, err := ort.NewCUDAProviderOptions()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create CUDA provider options: %w", err)
+			return nil, fmt.Errorf("create CUDA provider options: %w", err)
 		}
 		defer cudaOptions.Destroy()
+
 		if err := options.AppendExecutionProviderCUDA(cudaOptions); err != nil {
-			return nil, fmt.Errorf("failed to append CUDA execution provider: %w", err)
+			return nil, fmt.Errorf("append CUDA provider: %w", err)
 		}
 	}
 
-	// 创建方向模型
-	clsSessionInternal, err := ort.NewDynamicAdvancedSession(
+	var (
+		clsSessionInternal *ort.DynamicAdvancedSession
+		detSessionInternal *ort.DynamicAdvancedSession
+		recSessionInternal *ort.DynamicAdvancedSession
+	)
+
+	// ✅ 统一兜底回滚
+	defer func() {
+		if err != nil {
+			if clsSessionInternal != nil {
+				clsSessionInternal.Destroy()
+			}
+			if detSessionInternal != nil {
+				detSessionInternal.Destroy()
+			}
+			if recSessionInternal != nil {
+				recSessionInternal.Destroy()
+			}
+		}
+	}()
+
+	// CLS
+	clsSessionInternal, err = ort.NewDynamicAdvancedSession(
 		config.ClsModelPath,
-		[]string{"x"},            // 输入节点名
-		[]string{"fetch_name_0"}, // 输出节点名
+		[]string{"x"},
+		[]string{"fetch_name_0"},
 		options,
 	)
-
 	if err != nil {
-		clsSessionInternal.Destroy()
-		return nil, fmt.Errorf("failed to create classification session: %w", err)
+		return nil, fmt.Errorf("create classification session: %w", err)
 	}
 
-	// 创建检测模型
-	detSessionInternal, err := ort.NewDynamicAdvancedSession(
+	// DET
+	detSessionInternal, err = ort.NewDynamicAdvancedSession(
 		config.DetModelPath,
-		[]string{"x"},            // 输入节点名
-		[]string{"fetch_name_0"}, // 输出节点名
+		[]string{"x"},
+		[]string{"fetch_name_0"},
 		options,
 	)
 	if err != nil {
-		detSessionInternal.Destroy()
-		return nil, fmt.Errorf("failed to create detection session: %w", err)
+		return nil, fmt.Errorf("create detection session: %w", err)
 	}
 
-	// 创建识别会话
-	recSessionInternal, err := ort.NewDynamicAdvancedSession(
+	// REC
+	recSessionInternal, err = ort.NewDynamicAdvancedSession(
 		config.RecModelPath,
-		[]string{"x"},            // 输入节点名
-		[]string{"fetch_name_0"}, // 输出节点名
+		[]string{"x"},
+		[]string{"fetch_name_0"},
 		options,
 	)
 	if err != nil {
-		recSessionInternal.Destroy() // 清理已创建的 det session
-		return nil, fmt.Errorf("failed to create recognition session: %w", err)
+		return nil, fmt.Errorf("create recognition session: %w", err)
 	}
 
-	// 加载字典
+	// 字典
 	dict, err := loadDictFile(config.DictPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load dictionary file: %w", err)
-	}
-	detSession := &DetOnnxSession{detSessionInternal, config}
-	recSession := &RecOnnxSession{recSessionInternal, config, dict}
-	clsSession := &ClsOnnxSession{
-		OnnxSession: clsSessionInternal,
-		config:      config,
+		return nil, fmt.Errorf("load dictionary file: %w", err)
 	}
 
+	// 构建 session
 	session := &PaddleOCRSession{
-		clsSession,
-		detSession,
-		recSession,
-		config}
+		clsSession: &ClsOnnxSession{
+			OnnxSession: clsSessionInternal,
+			config:      config,
+		},
+		detSession: &DetOnnxSession{
+			OnnxSession: detSessionInternal,
+			Config:      config,
+		},
+		recSession: &RecOnnxSession{
+			OnnxSession: recSessionInternal,
+			Config:      config,
+			Character:   dict,
+		},
+		config: config,
+	}
+
 	return session, nil
 }
 
