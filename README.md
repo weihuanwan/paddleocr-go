@@ -16,7 +16,7 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
 
 1. 下载依赖 
 
-   - go get -u github.com/weihuanwan/paddle-ocr-go
+   - go get -u github.com/weihuanwan/paddleocr-go
    - go mod tidy
 
 2. 代码示例
