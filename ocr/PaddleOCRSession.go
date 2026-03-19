@@ -159,12 +159,12 @@ func (session *PaddleOCRSession) rotateImage(img *gocv.Mat, clsResult *ClsResult
 // RunOCR 对图像执行检测和识别
 func (session *PaddleOCRSession) RunOCR(imagePath string) (*OcrResult, error) {
 
-	image := gocv.IMRead(imagePath, gocv.IMReadColor)
+	imgMat, err := LoadImage(imagePath)
 
-	if image.Empty() {
-		return nil, fmt.Errorf("image is empty")
+	if err != nil {
+		return nil, err
 	}
-	img := &image
+	img := imgMat
 	defer img.Close()
 	fileName := filepath.Base(imagePath)
 	// 1.方向
