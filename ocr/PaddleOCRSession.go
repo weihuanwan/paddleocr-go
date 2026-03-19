@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -202,6 +203,7 @@ func (session *PaddleOCRSession) RunOCR(imagePath string) (*OcrResult, error) {
 		}
 		gocv.Polylines(rotateImage, pts, true, color.RGBA{255, 0, 0, 0}, 2)
 		gocv.IMWrite("det_result_"+fileName, *rotateImage)
+		log.Printf("det_result_%s", fileName)
 	}
 
 	// 5.识别
