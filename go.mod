@@ -1,4 +1,4 @@
-module github.com/weihuanwan/paddle-ocr-go
+module github.com/weihuanwan/paddleocr
 
 go 1.25
 
