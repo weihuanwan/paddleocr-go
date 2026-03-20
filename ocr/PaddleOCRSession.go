@@ -10,6 +10,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
 )
@@ -171,7 +172,7 @@ func (session *PaddleOCRSession) rotateImage(img *gocv.Mat, clsResult *ClsResult
 // RunOCR 对图像执行检测和识别
 func (session *PaddleOCRSession) RunOCR(imagePath string) (*OcrResult, error) {
 
-	imgMat, fileName, err := LoadImage(imagePath)
+	imgMat, fileName, err := common.LoadImage(imagePath)
 
 	if err != nil {
 		return nil, err

@@ -1,4 +1,4 @@
-package ocr
+package common
 
 import (
 	"fmt"
