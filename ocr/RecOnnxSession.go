@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"math"
 
+	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
 )
@@ -53,7 +54,7 @@ func (rec *RecOnnxSession) Run(cropImages []*gocv.Mat) []*RecResult {
 			panic(err)
 		}
 		// 获取 序列长度（最多字符数） 五舍六入
-		seqLen := Round06(float64(w) / 8)
+		seqLen := common.Round06(float64(w) / 8)
 
 		outputTensor, _ := ort.NewEmptyTensor[float32](ort.NewShape(
 			int64(resLen),
@@ -71,15 +72,6 @@ func (rec *RecOnnxSession) Run(cropImages []*gocv.Mat) []*RecResult {
 		outputTensor.Destroy()
 	}
 	return result
-}
-
-func Round06(x float64) int {
-	integer := math.Floor(x)
-	frac := x - integer
-	if frac >= 0.6 {
-		return int(integer + 1)
-	}
-	return int(integer)
 }
 
 func (rec *RecOnnxSession) paddedImgHWCToCHW(batch []*gocv.Mat) ([]float32, int, int) {
@@ -105,7 +97,7 @@ func (rec *RecOnnxSession) paddedImgHWCToCHW(batch []*gocv.Mat) ([]float32, int,
 			color.RGBA{0, 0, 0, 255}, // padding值
 		)
 		// 转换chw
-		chw := HWCToCHW(&dst)
+		chw := common.HWCToCHW(&dst)
 		copy(allData[offset:], chw)
 		offset += len(chw)
 		dst.Close()

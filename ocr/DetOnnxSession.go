@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	clipper "github.com/cwbudde/go-clipper2/port"
+	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
 )
@@ -23,7 +24,7 @@ type DetResult struct {
 	Score  float32
 }
 
-func (det DetOnnxSession) Run(originImage *gocv.Mat) ([]*DetResult, error) {
+func (det *DetOnnxSession) Run(originImage *gocv.Mat) ([]*DetResult, error) {
 	// 缩放
 	resizedImage, ratio, err := det.resize(originImage)
 
@@ -45,7 +46,7 @@ func (det DetOnnxSession) Run(originImage *gocv.Mat) ([]*DetResult, error) {
 	//w.IMShow(*imageNormalize)
 	//w.WaitKey(0)
 	// 转换 chw
-	imageCHW := HWCToCHW(imageNormalize)
+	imageCHW := common.HWCToCHW(imageNormalize)
 
 	// 描述
 	shape := ort.NewShape(1, 3, int64(resizedImage.Rows()), int64(resizedImage.Cols()))
@@ -78,7 +79,7 @@ func (det DetOnnxSession) Run(originImage *gocv.Mat) ([]*DetResult, error) {
 /*
 * 缩放
  */
-func (det DetOnnxSession) resize(originImage *gocv.Mat) (*gocv.Mat, []int, error) {
+func (det *DetOnnxSession) resize(originImage *gocv.Mat) (*gocv.Mat, []int, error) {
 
 	origHeight := originImage.Rows()
 	origWidth := originImage.Cols()
@@ -142,7 +143,7 @@ func (det DetOnnxSession) resize(originImage *gocv.Mat) (*gocv.Mat, []int, error
 }
 
 // 归一化处理
-func (det DetOnnxSession) normalize(resizedImage *gocv.Mat) (*gocv.Mat, error) {
+func (det *DetOnnxSession) normalize(resizedImage *gocv.Mat) (*gocv.Mat, error) {
 	c := resizedImage.Channels()
 
 	// 获取rgb
@@ -482,7 +483,7 @@ func distance(p1, p2 image.Point) float64 {
 	dy := p1.Y - p2.Y
 	return math.Sqrt(float64(dx*dx + dy*dy))
 }
-func (det DetOnnxSession) extractBoxes(heatmap []float32, ratio []int) ([]*DetResult, error) {
+func (det *DetOnnxSession) extractBoxes(heatmap []float32, ratio []int) ([]*DetResult, error) {
 	originHeight := ratio[0]
 	originWidth := ratio[1]
 	resizeHeight := ratio[2]

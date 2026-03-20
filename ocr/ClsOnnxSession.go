@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 
+	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
 )
@@ -39,7 +40,7 @@ func (cls *ClsOnnxSession) Run(image *gocv.Mat) (*ClsResult, error) {
 	}
 	defer normalizeImage.Close()
 
-	imageCHW := HWCToCHW(normalizeImage)
+	imageCHW := common.HWCToCHW(normalizeImage)
 
 	// 描述
 	shape := ort.NewShape(1, 3, int64(normalizeImage.Rows()), int64(normalizeImage.Cols()))

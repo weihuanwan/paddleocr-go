@@ -394,25 +394,3 @@ func loadDictFile(path string) ([]string, error) {
 	lines = append(lines, " ")
 	return lines, nil
 }
-
-func HWCToCHW(resizedImage *gocv.Mat) []float32 {
-	// 转换chw
-	h := resizedImage.Rows()
-	w := resizedImage.Cols()
-	c := resizedImage.Channels()
-	chw := make([]float32, c*h*w)
-	data, err := resizedImage.DataPtrFloat32()
-	if err != nil {
-		panic(err)
-	}
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			for ch := 0; ch < c; ch++ {
-				hwcIndex := (y*w+x)*c + ch
-				chwIndex := ch*h*w + y*w + x
-				chw[chwIndex] = data[hwcIndex]
-			}
-		}
-	}
-	return chw
-}
