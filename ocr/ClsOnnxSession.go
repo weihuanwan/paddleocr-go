@@ -13,7 +13,7 @@ import (
 
 type ClsOnnxSession struct {
 	OnnxSession *ort.DynamicAdvancedSession
-	config      *PaddleOCRConfig
+	Config      *PaddleOCRConfig
 }
 type ClsResult struct {
 	Label int
@@ -34,7 +34,7 @@ func (cls *ClsOnnxSession) Run(image *gocv.Mat) (*ClsResult, error) {
 	cropImage := cls.crop(resizeImage)
 	defer cropImage.Close()
 
-	normalizeImage, err := cls.normalize(cropImage)
+	normalizeImage, err := common.Normalize(cropImage, cls.Config.Alpha, cls.Config.Beta)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +78,8 @@ func (cls *ClsOnnxSession) Run(image *gocv.Mat) (*ClsResult, error) {
 			maxIdx = i
 		}
 	}
-	label := cls.config.ClsMap[maxIdx]
-	if cls.config.UseLog {
+	label := cls.Config.ClsMap[maxIdx]
+	if cls.Config.UseLog {
 		log.Printf("cls label %d score %f", label, maxScore)
 	}
 
@@ -120,7 +120,7 @@ func (cls *ClsOnnxSession) crop(resizeImage *gocv.Mat) *gocv.Mat {
 	h := resizeImage.Rows()
 	w := resizeImage.Cols()
 
-	cw, ch := cls.config.ClsCropSize[0], cls.config.ClsCropSize[1]
+	cw, ch := cls.Config.ClsCropSize[0], cls.Config.ClsCropSize[1]
 
 	x1 := max(0, (w-cw)/2)
 	y1 := max(0, (h-ch)/2)
@@ -131,44 +131,4 @@ func (cls *ClsOnnxSession) crop(resizeImage *gocv.Mat) *gocv.Mat {
 	// 使用Region方法裁剪（推荐）
 	croppedRegion := resizeImage.Region(image.Rect(x1, y1, x2, y2))
 	return &croppedRegion
-}
-
-// 归一化处理
-func (cls *ClsOnnxSession) normalize(resizedImage *gocv.Mat) (*gocv.Mat, error) {
-	c := resizedImage.Channels()
-	// 获取rgb
-	gbrSplit := gocv.Split(*resizedImage)
-
-	scale := cls.config.Scale
-	mean := cls.config.Mean
-	std := cls.config.Std
-	var alpha [3]float32
-	var beta [3]float32
-
-	for i := 0; i < c; i++ {
-		alpha[i] = scale / std[i]
-		beta[i] = -mean[i] / std[i]
-	}
-	for i := range c {
-		cpMat := gocv.NewMat()
-		old := gbrSplit[i]
-		//转换 32 位
-		err := old.ConvertTo(&cpMat, gocv.MatTypeCV32F)
-		if err != nil {
-			return nil, fmt.Errorf("cls normalize convert to 32f error")
-		}
-		gbrSplit[i] = cpMat
-		// 该通道乘以
-		gbrSplit[i].MultiplyFloat(alpha[i])
-		// 在加上
-		gbrSplit[i].AddFloat(beta[i])
-
-	}
-	result := gocv.NewMat()
-
-	err := gocv.Merge(gbrSplit, &result)
-	if err != nil {
-		return nil, fmt.Errorf("cls normalize merge error")
-	}
-	return &result, nil
 }

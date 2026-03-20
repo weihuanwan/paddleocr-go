@@ -34,7 +34,7 @@ func (det *DetOnnxSession) Run(originImage *gocv.Mat) ([]*DetResult, error) {
 
 	defer resizedImage.Close()
 	// 归一化
-	imageNormalize, err := det.normalize(resizedImage)
+	imageNormalize, err := common.Normalize(resizedImage, det.Config.Alpha, det.Config.Beta)
 
 	if err != nil {
 		return nil, err
@@ -140,51 +140,6 @@ func (det *DetOnnxSession) resize(originImage *gocv.Mat) (*gocv.Mat, []int, erro
 
 	return &resizedImage, []int{origHeight, origWidth, resizeH, resizeW}, nil
 
-}
-
-// 归一化处理
-func (det *DetOnnxSession) normalize(resizedImage *gocv.Mat) (*gocv.Mat, error) {
-	c := resizedImage.Channels()
-
-	// 获取rgb
-	gbrSplit := gocv.Split(*resizedImage)
-
-	scale := det.Config.Scale
-	mean := det.Config.Mean
-	std := det.Config.Std
-	var alpha [3]float32
-	var beta [3]float32
-
-	for i := 0; i < c; i++ {
-		alpha[i] = scale / std[i]
-		beta[i] = -mean[i] / std[i]
-	}
-
-	for i := 0; i < c; i++ {
-		cpMat := gocv.NewMat()
-		old := gbrSplit[i]
-		//转换 32 位
-		err := old.ConvertTo(&cpMat, gocv.MatTypeCV32F)
-		if err != nil {
-			return nil, fmt.Errorf("det normalize  convert to 32f error")
-		}
-		old.Close()
-		gbrSplit[i] = cpMat
-		// 该通道乘以
-		gbrSplit[i].MultiplyFloat(alpha[i])
-		// 在加上
-		gbrSplit[i].AddFloat(beta[i])
-
-	}
-	result := gocv.NewMat()
-
-	err := gocv.Merge(gbrSplit, &result)
-	if err != nil {
-
-		return nil, fmt.Errorf("det normalize merge error")
-
-	}
-	return &result, nil
 }
 
 func unclip(box []image.Point, unclipRatio float32) gocv.PointVector {

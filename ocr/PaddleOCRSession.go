@@ -43,9 +43,11 @@ type PaddleOCRConfig struct {
 	MinSize          float32 // 距离图片最小范围
 	UnclipRatio      float32 // 1.5
 	// 三个检测模型归一化 参数
-	Scale        float32
-	Mean         []float32
-	Std          []float32
+	Alpha [3]float32
+	Beta  [3]float32
+	//Scale        float32
+	//Mean         []float32
+	//Std          []float32
 	MaxSideLimit int // 最大缩放比例  默认4000
 	LimitSideLen int // 限制缩放比例 默认64
 
@@ -70,6 +72,18 @@ func NewDefaultPaddleOCRConfig(
 	useLog bool,
 
 ) *PaddleOCRConfig {
+
+	scale := float32(1.0 / 255.0)
+	mean := []float32{0.485, 0.456, 0.406}
+	std := []float32{0.229, 0.224, 0.225}
+	var alpha [3]float32
+	var beta [3]float32
+
+	for i := 0; i < 3; i++ {
+		alpha[i] = scale / std[i]
+		beta[i] = -mean[i] / std[i]
+	}
+
 	config := &PaddleOCRConfig{
 		OnnxRuntimeLibPath: onnxRuntimeLibPath,
 		DetModelPath:       detModelPath,
@@ -83,9 +97,8 @@ func NewDefaultPaddleOCRConfig(
 		MinSize:            3,
 		RecBatchSize:       6,
 		RecModelNumClasses: 18385,
-		Scale:              float32(1.0 / 255.0),
-		Mean:               []float32{0.485, 0.456, 0.406},
-		Std:                []float32{0.229, 0.224, 0.225},
+		Alpha:              alpha,
+		Beta:               beta,
 		RecImageShape:      [4]int{3, 48, 320, 3200},
 		ClsCropSize:        [2]int{224, 224},
 		ClsMap:             [4]int{0, 90, 180, 270},
@@ -359,7 +372,7 @@ func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
 	session := &PaddleOCRSession{
 		clsSession: &ClsOnnxSession{
 			OnnxSession: clsSessionInternal,
-			config:      config,
+			Config:      config,
 		},
 		detSession: &DetOnnxSession{
 			OnnxSession: detSessionInternal,
