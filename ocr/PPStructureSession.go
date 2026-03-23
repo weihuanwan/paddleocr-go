@@ -8,7 +8,7 @@ import (
 )
 
 type PPStructureSession struct {
-	DocLayoutSession *DocLayoutPlusLSession // 方向
+	DocLayoutSession *LayoutDetSession // 方向
 }
 
 /*
@@ -83,13 +83,13 @@ func NewPPStructureSession(config *PPStructureOCRConfig) (*PPStructureSession, e
 	docLayoutPlusLSessionInternal, err := ort.NewDynamicAdvancedSession(
 		config.DocLayoutPlusLModelPath,
 		[]string{"im_shape", "image", "scale_factor"},
-		[]string{"fetch_name_0", "fetch_name_1"},
+		[]string{"fetch_name_0", "fetch_name_1", "fetch_name_2"},
 		options,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create classification session: %w", err)
 	}
-	docLayoutSession := NewDocLayoutPlusLSession(docLayoutPlusLSessionInternal)
+	docLayoutSession := NewLayoutDetSession(docLayoutPlusLSessionInternal)
 	// 构建 session
 	session := &PPStructureSession{
 		DocLayoutSession: docLayoutSession,
@@ -97,12 +97,15 @@ func NewPPStructureSession(config *PPStructureOCRConfig) (*PPStructureSession, e
 
 	return session, nil
 }
-func (session *PPStructureSession) RunOCR(imagePath string) {
+func (session *PPStructureSession) RunOCR(imagePath string) error {
 	imageMat, _, err := common.LoadImage(imagePath)
 
 	if err != nil {
 
+		return err
 	}
 
 	session.DocLayoutSession.Run(imageMat)
+
+	return nil
 }
