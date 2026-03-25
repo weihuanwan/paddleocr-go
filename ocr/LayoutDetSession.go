@@ -176,6 +176,7 @@ func (layoutDet *LayoutDetSession) resize(imageMat *gocv.Mat) (*gocv.Mat, []floa
 
 func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, masks []int32, originImageH int, originImageW int, scale []float32) {
 
+	// [ 225. 2431. 2913. 3956.]
 	step := 7
 	maskSize := 200 * 200
 	layoutDetBoxs := make([]LayoutDetBox, 0)
@@ -250,6 +251,9 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, 
 		}
 	}
 
+	sort.Slice(filteredBoxes, func(i, j int) bool {
+		return filteredBoxes[i].Order < filteredBoxes[j].Order
+	})
 	extractPolygonPointsByMasks(filteredBoxes, scale)
 
 }
@@ -369,11 +373,77 @@ func IoU(a, b LayoutDetBox) float64 {
 	return interArea / union
 }
 
-func extractPolygonPointsByMasks(LayoutDetBox []LayoutDetBox, scale []float32) {
+func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox, scale []float32) {
 
-	//scaleH := scale[0]
-	//scaleW := scale[1]
-	//h_m := 200
-	//w_m := 200
+	scaleH := scale[0] / 4
+	scaleW := scale[1] / 4
+	hm := 200
+	wm := 200
+	// 找到最大的宽度
+	maxBoxW := 0
+	for i := 0; i < len(layoutDetBox); i++ {
+		box := layoutDetBox[i]
+
+		maxW := box.Point[1].X - box.Point[0].Y
+		if maxBoxW < maxW {
+			maxBoxW = maxW
+		}
+	}
+
+	polygonPoints := make([][]image.Point, 0)
+
+	for i := 0; i < len(layoutDetBox); i++ {
+		box := layoutDetBox[i]
+		//  #2501,214,107,2846
+		minX := box.Point[0].X
+		minY := box.Point[0].Y
+		maxX := box.Point[1].X
+		maxY := box.Point[1].Y
+
+		boxW, boxH := maxX-minX, maxY-minY
+
+		// 默认矩形（四个顶点，顺序：左上、右上、右下、左下）
+		rect := []image.Point{
+			{minX, minY},
+			{maxX, minY},
+			{maxX, maxY},
+			{minX, maxY},
+		}
+
+		if boxW <= 0 || boxH <= 0 {
+			polygonPoints = append(polygonPoints, rect)
+			continue
+		}
+		// 14
+		minW := int(math.Min(math.Max(0, math.Round(float64(minX)*float64(scaleW))), float64(wm)))
+		maxW := int(math.Min(math.Max(0, math.Round(float64(maxX)*float64(scaleW))), float64(wm))) //183
+
+		minH := int(math.Min(math.Max(0, math.Round(float64(minY)*float64(scaleH))), float64(hm))) //108
+		maxH := int(math.Min(math.Max(0, math.Round(float64(maxY)*float64(scaleH))), float64(hm))) //176
+
+		mask := box.Mask
+
+		cropped := make([]int32, 0)
+		for i := minH; i <= maxH; i++ {
+			maskStart := i*wm + minW
+			maskEnd := i*wm + maxW
+			// 找到
+			m := mask[maskStart:maskEnd]
+			//fmt.Println(m)
+			cropped = append(cropped, m...)
+
+		}
+
+		//for i, val := range mask {
+		//	if i > 0 && i%200 == 0 {
+		//		fmt.Println() // 每200个元素换行
+		//	}
+		//	fmt.Printf(" %d", val) // 控制宽度和小数位数，根据实际类型调整
+		//}
+		//fmt.Println() // 最后补一个换行（可选）
+
+		//fmt.Printf("测试", minW, minH, maxW, maxH, mask)
+
+	}
 
 }
