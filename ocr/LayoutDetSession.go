@@ -3,6 +3,7 @@ package ocr
 import (
 	"fmt"
 	"image"
+	"log"
 	"math"
 	"sort"
 
@@ -30,6 +31,7 @@ type LayoutDetResult struct {
 	Order int
 
 	Point []*image.Point
+	Mask  []int32
 }
 
 func NewLayoutDetSession(onnxSession *ort.DynamicAdvancedSession) *LayoutDetSession {
@@ -156,35 +158,37 @@ func (layoutDet *LayoutDetSession) resize(imageMat *gocv.Mat) (*gocv.Mat, []floa
 
 }
 
-func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, i1 []int32, masks []int32, originImageH int, originImageW int) {
+func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, masks []int32, originImageH int, originImageW int) {
 
-	for i := 0; i < len(masks); i++ {
-		if masks[i] > 0 {
-			fmt.Printf("数字 %w", masks[i])
-		}
-	}
 	step := 7
-
+	maskSize := 200 * 200
 	layoutDetResults := make([]LayoutDetResult, 0)
 	for i := 0; i < len(boxes); i += step {
-		//// 只处理坐标 x1 y1 x2 y2
-		//boxes[i+2] = float32(int(math.Round(float64(boxes[i+2]))))
-		//boxes[i+3] = float32(int(math.Round(float64(boxes[i+3]))))
-		//boxes[i+4] = float32(int(math.Round(float64(boxes[i+4]))))
-		//boxes[i+5] = float32(int(math.Round(float64(boxes[i+5]))))
-
 		if boxes[i+0] > -1 && boxes[i+1] > layoutDet.Threshold {
+
+			detIndex := i / step
+
+			// 取 mask
+			maskStart := detIndex * maskSize
+			maskEnd := maskStart + maskSize
+			mask := masks[maskStart:maskEnd]
+
+			// 取这个位置的
 			xmin := boxes[i+2]
 			ymin := boxes[i+3]
 			xmax := boxes[i+4]
 			ymax := boxes[i+5]
+
 			minP := image.Point{int(math.Round(float64(xmin))), int(math.Round(float64(ymin)))}
 			maxP := image.Point{int(math.Round(float64(xmax))), int(math.Round(float64(ymax)))}
+			clsId := int(boxes[i])
 			layoutDetResult := LayoutDetResult{
-				ClsId: int(boxes[i+0]),
+				ClsId: clsId,
 				Score: boxes[i+1],
-				Label: layoutDet.Labels[i],
+				Order: int(boxes[i+6]),
+				Label: layoutDet.Labels[clsId],
 				Point: []*image.Point{&minP, &maxP},
+				Mask:  mask,
 			}
 			layoutDetResults = append(layoutDetResults, layoutDetResult)
 		}
@@ -213,10 +217,17 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, i1 []int32, mas
 				ymax := min(originImageH, maxPoint.Y)
 				boxArea := (xmax - xmin) * (ymax - ymin)
 
+				// 过滤超大图的
 				if boxArea <= int(areaThres*float64(imgArea)) {
 					filteredBoxes = append(filteredBoxes, layoutDetResult)
+				} else {
+					log.Printf(
+						"[LayoutDet] filter large image box, area=%d, imgArea=%d, ratio=%.2f",
+						boxArea,
+						imgArea,
+						float64(boxArea)/float64(imgArea),
+					)
 				}
-
 			} else {
 				filteredBoxes = append(filteredBoxes, layoutDetResult)
 			}
@@ -225,6 +236,7 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, i1 []int32, mas
 	}
 }
 
+// 处理重
 func NMSLayout(boxes []LayoutDetResult, iouSame, iouDiff float64) []LayoutDetResult {
 
 	if len(boxes) == 0 {
@@ -250,6 +262,7 @@ func NMSLayout(boxes []LayoutDetResult, iouSame, iouDiff float64) []LayoutDetRes
 
 		// for i in indices:
 		for i := 1; i < len(boxes); i++ {
+			// 获取下一个
 			nextBox := boxes[i]
 
 			// box_class
@@ -269,6 +282,8 @@ func NMSLayout(boxes []LayoutDetResult, iouSame, iouDiff float64) []LayoutDetRes
 			// if iou < threshold → keep
 			if iouValue < threshold {
 				remaining = append(remaining, nextBox)
+			} else {
+				log.Panicln("iouValue < threshold")
 			}
 		}
 

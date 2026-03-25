@@ -8,7 +8,7 @@ import (
 )
 
 type PPStructureSession struct {
-	DocLayoutSession *LayoutDetSession // 方向
+	LayoutDetSession *LayoutDetSession // 方向
 }
 
 /*
@@ -92,7 +92,7 @@ func NewPPStructureSession(config *PPStructureOCRConfig) (*PPStructureSession, e
 	docLayoutSession := NewLayoutDetSession(docLayoutPlusLSessionInternal)
 	// 构建 session
 	session := &PPStructureSession{
-		DocLayoutSession: docLayoutSession,
+		LayoutDetSession: docLayoutSession,
 	}
 
 	return session, nil
@@ -105,7 +105,7 @@ func (session *PPStructureSession) RunOCR(imagePath string) error {
 		return err
 	}
 
-	session.DocLayoutSession.Run(imageMat)
+	session.LayoutDetSession.Run(imageMat)
 
 	return nil
 }
