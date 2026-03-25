@@ -76,3 +76,10 @@ func HWCToCHW(resizedImage *gocv.Mat) []float32 {
 	}
 	return chw
 }
+func Sum(nums ...int32) int {
+	total := 0
+	for _, num := range nums {
+		total += int(num)
+	}
+	return total
+}

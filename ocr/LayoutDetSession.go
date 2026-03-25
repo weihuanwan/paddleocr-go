@@ -434,15 +434,11 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox, scale []float32) {
 
 		}
 
-		//for i, val := range mask {
-		//	if i > 0 && i%200 == 0 {
-		//		fmt.Println() // 每200个元素换行
-		//	}
-		//	fmt.Printf(" %d", val) // 控制宽度和小数位数，根据实际类型调整
-		//}
-		//fmt.Println() // 最后补一个换行（可选）
-
-		//fmt.Printf("测试", minW, minH, maxW, maxH, mask)
+		count := common.Sum(cropped...)
+		if count == 0 {
+			polygonPoints = append(polygonPoints, rect)
+			continue
+		}
 
 	}
 
