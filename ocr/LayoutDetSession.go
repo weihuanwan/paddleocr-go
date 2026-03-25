@@ -24,6 +24,16 @@ type LayoutDetSession struct {
 	Labels    []string // 标签字典
 	Threshold float32  // 置信度
 }
+
+type LayoutDetBox struct {
+	ClsId int
+	Label string
+	Score float32
+	Order int
+
+	Point []image.Point
+	Mask  []int32
+}
 type LayoutDetResult struct {
 	ClsId int
 	Label string
@@ -100,7 +110,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, err
 	// 3. resize 缩放比例
 	scaleFactorTensor, err := ort.NewTensor(ort.NewShape(1, 2), scale)
 	if err != nil {
-		return nil, fmt.Errorf("dataTensor input tensor error", err.Error())
+		return nil, fmt.Errorf("scaleFactorTensor input tensor error", err.Error())
 	}
 	defer scaleFactorTensor.Destroy()
 
@@ -117,7 +127,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, err
 	// 5.输出实际框数量
 	output1Tensor, err := ort.NewEmptyTensor[int32](ort.NewShape(1))
 	if err != nil {
-		return nil, fmt.Errorf("output0Tensor output tensor error", err.Error())
+		return nil, fmt.Errorf("output1Tensor output tensor error", err.Error())
 	}
 
 	defer output1Tensor.Destroy()
@@ -125,17 +135,23 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, err
 	// 6. 分割 mask,	最多 300 个检测框,每个框对应一个 200×200 的二值图
 	output2Tensor, err := ort.NewEmptyTensor[int32](ort.NewShape(maxDet, 200, 200))
 	if err != nil {
-		return nil, fmt.Errorf("output0Tensor output tensor error", err.Error())
+		return nil, fmt.Errorf("output2Tensor output tensor error", err.Error())
 	}
 	defer output2Tensor.Destroy()
 
 	// 检测（核心）
 	err = layoutDet.OnnxSession.Run([]ort.Value{imageTensor, dataTensor, scaleFactorTensor}, []ort.Value{output0Tensor, output1Tensor, output2Tensor})
 	if err != nil {
-		fmt.Printf(err.Error())
+		return nil, fmt.Errorf("layoutDet.OnnxSession.Run() error", err.Error())
 	}
 
-	layoutDet.formatOutput(output0Tensor.GetData(), output1Tensor.GetData(), output2Tensor.GetData(), originImage.Rows(), originImage.Cols())
+	layoutDet.formatOutput(
+		output0Tensor.GetData(),
+		output1Tensor.GetData(),
+		output2Tensor.GetData(),
+		originImage.Rows(),
+		originImage.Cols(),
+		scale)
 
 	return nil, err
 }
@@ -158,11 +174,11 @@ func (layoutDet *LayoutDetSession) resize(imageMat *gocv.Mat) (*gocv.Mat, []floa
 
 }
 
-func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, masks []int32, originImageH int, originImageW int) {
+func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, masks []int32, originImageH int, originImageW int, scale []float32) {
 
 	step := 7
 	maskSize := 200 * 200
-	layoutDetResults := make([]LayoutDetResult, 0)
+	layoutDetBoxs := make([]LayoutDetBox, 0)
 	for i := 0; i < len(boxes); i += step {
 		if boxes[i+0] > -1 && boxes[i+1] > layoutDet.Threshold {
 
@@ -182,21 +198,21 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, 
 			minP := image.Point{int(math.Round(float64(xmin))), int(math.Round(float64(ymin)))}
 			maxP := image.Point{int(math.Round(float64(xmax))), int(math.Round(float64(ymax)))}
 			clsId := int(boxes[i])
-			layoutDetResult := LayoutDetResult{
+			layoutDetResult := LayoutDetBox{
 				ClsId: clsId,
 				Score: boxes[i+1],
 				Order: int(boxes[i+6]),
 				Label: layoutDet.Labels[clsId],
-				Point: []*image.Point{&minP, &maxP},
+				Point: []image.Point{minP, maxP},
 				Mask:  mask,
 			}
-			layoutDetResults = append(layoutDetResults, layoutDetResult)
+			layoutDetBoxs = append(layoutDetBoxs, layoutDetResult)
 		}
 	}
 	// 去重
-	layoutDetResultNMS := NMSLayout(layoutDetResults, 0.6, 0.98)
+	layoutDetResultNMS := NMSLayout(layoutDetBoxs, 0.6, 0.98)
 
-	filteredBoxes := make([]LayoutDetResult, 0)
+	filteredBoxes := make([]LayoutDetBox, 0)
 
 	if len(layoutDetResultNMS) > 0 {
 		areaThres := 0.93
@@ -231,13 +247,15 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, 
 			} else {
 				filteredBoxes = append(filteredBoxes, layoutDetResult)
 			}
-
 		}
 	}
+
+	extractPolygonPointsByMasks(filteredBoxes, scale)
+
 }
 
 // 处理重
-func NMSLayout(boxes []LayoutDetResult, iouSame, iouDiff float64) []LayoutDetResult {
+func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 
 	if len(boxes) == 0 {
 		return boxes
@@ -248,7 +266,7 @@ func NMSLayout(boxes []LayoutDetResult, iouSame, iouDiff float64) []LayoutDetRes
 		return boxes[i].Score > boxes[j].Score
 	})
 
-	var selected []LayoutDetResult
+	var selected []LayoutDetBox
 
 	// 对应 Python: while len(indices) > 0
 	for len(boxes) > 0 {
@@ -258,7 +276,7 @@ func NMSLayout(boxes []LayoutDetResult, iouSame, iouDiff float64) []LayoutDetRes
 		// 当前的添加进去
 		selected = append(selected, currentBox)
 
-		var remaining []LayoutDetResult
+		var remaining []LayoutDetBox
 
 		// for i in indices:
 		for i := 1; i < len(boxes); i++ {
@@ -293,7 +311,7 @@ func NMSLayout(boxes []LayoutDetResult, iouSame, iouDiff float64) []LayoutDetRes
 	return selected
 }
 
-func IoU(a, b LayoutDetResult) float64 {
+func IoU(a, b LayoutDetBox) float64 {
 
 	/**
 	框 A                框 B
@@ -349,4 +367,13 @@ func IoU(a, b LayoutDetResult) float64 {
 	// 交集面积 / 并集面积
 
 	return interArea / union
+}
+
+func extractPolygonPointsByMasks(LayoutDetBox []LayoutDetBox, scale []float32) {
+
+	//scaleH := scale[0]
+	//scaleW := scale[1]
+	//h_m := 200
+	//w_m := 200
+
 }
