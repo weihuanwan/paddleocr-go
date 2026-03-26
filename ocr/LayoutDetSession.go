@@ -5,7 +5,9 @@ import (
 	"image"
 	"log"
 	"math"
+	"slices"
 	"sort"
+	"unsafe"
 
 	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
@@ -20,9 +22,10 @@ type LayoutDetSession struct {
 	Alpha       [3]float32
 	Beta        [3]float32
 
-	Resize    [2]int   // 缩放
-	Labels    []string // 标签字典
-	Threshold float32  // 置信度
+	Resize               [2]int   // 缩放
+	Labels               []string // 标签字典
+	LayoutMergeBoxesMode []string // 标签字典
+	Threshold            float32  // 置信度
 }
 
 type LayoutDetBox struct {
@@ -31,8 +34,9 @@ type LayoutDetBox struct {
 	Score float32
 	Order int
 
-	Point []image.Point
-	Mask  []int32
+	Point [4]int
+
+	Mask []int32
 }
 type LayoutDetResult struct {
 	ClsId int
@@ -62,12 +66,17 @@ func NewLayoutDetSession(onnxSession *ort.DynamicAdvancedSession) *LayoutDetSess
 		"image", "inline_formula", "number", "paragraph_title",
 		"reference", "reference_content", "seal", "table",
 		"text", "vertical_text", "vision_footnote"}
+
+	var layoutMergeBoxesMode = []string{"union", "union", "union", "large", "union",
+		"large", "large", "union", "union", "union", "union", "union", "union", "union", "union", "large", "union",
+		"large", "union", "union", "union", "union", "union", "union", "union"}
 	return &LayoutDetSession{
 		onnxSession,
 		alpha,
 		beta,
 		[2]int{800, 800},
 		labels,
+		layoutMergeBoxesMode,
 		0.3,
 	}
 }
@@ -191,30 +200,26 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, 
 			mask := masks[maskStart:maskEnd]
 
 			// 取这个位置的
-			xmin := boxes[i+2]
-			ymin := boxes[i+3]
-			xmax := boxes[i+4]
-			ymax := boxes[i+5]
-
-			minP := image.Point{int(math.Round(float64(xmin))), int(math.Round(float64(ymin)))}
-			maxP := image.Point{int(math.Round(float64(xmax))), int(math.Round(float64(ymax)))}
+			xmin := int(math.Round(float64(boxes[i+2])))
+			ymin := int(math.Round(float64(boxes[i+3])))
+			xmax := int(math.Round(float64(boxes[i+4])))
+			ymax := int(math.Round(float64(boxes[i+5])))
 			clsId := int(boxes[i])
 			layoutDetResult := LayoutDetBox{
 				ClsId: clsId,
 				Score: boxes[i+1],
 				Order: int(boxes[i+6]),
 				Label: layoutDet.Labels[clsId],
-				Point: []image.Point{minP, maxP},
+				Point: [4]int{xmin, ymin, xmax, ymax},
 				Mask:  mask,
 			}
 			layoutDetBoxs = append(layoutDetBoxs, layoutDetResult)
 		}
 	}
-	// 去重
+	// 解决同一个区域出现多个标签问题，取最高的，过滤最低的
 	layoutDetResultNMS := NMSLayout(layoutDetBoxs, 0.6, 0.98)
 
 	filteredBoxes := make([]LayoutDetBox, 0)
-
 	if len(layoutDetResultNMS) > 0 {
 		areaThres := 0.93
 		if originImageW > originImageH {
@@ -226,12 +231,10 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, 
 			layoutDetResult := layoutDetResultNMS[i]
 			// 判断是否是图片
 			if layoutDetResult.Label == "image" {
-				minPoint := layoutDetResult.Point[0]
-				maxPoint := layoutDetResult.Point[1]
-				xmin := max(0, minPoint.X)
-				ymin := max(0, minPoint.Y)
-				xmax := min(originImageW, maxPoint.X)
-				ymax := min(originImageH, maxPoint.Y)
+				xmin := max(0, layoutDetResult.Point[0])
+				ymin := max(0, layoutDetResult.Point[1])
+				xmax := min(originImageW, layoutDetResult.Point[2])
+				ymax := min(originImageH, layoutDetResult.Point[3])
 				boxArea := (xmax - xmin) * (ymax - ymin)
 
 				// 过滤超大图的
@@ -251,10 +254,43 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, 
 		}
 	}
 
-	sort.Slice(filteredBoxes, func(i, j int) bool {
-		return filteredBoxes[i].Order < filteredBoxes[j].Order
+	// 解决一个大区域内存在小标签问题。如:一个表格内是存在文本标签问题
+	filteredBoxesLen := len(filteredBoxes)
+	keepMaskBoxes := make([]LayoutDetBox, 0, filteredBoxesLen)
+	if filteredBoxesLen > 0 {
+		// 225 2432 2913 3956  keep_mask = np.ones(len(boxes), dtype=bool)
+		keepMask := slices.Repeat([]bool{true}, filteredBoxesLen)
+
+		for categoryIndex := 0; categoryIndex < len(layoutDet.LayoutMergeBoxesMode); categoryIndex++ {
+			mode := layoutDet.LayoutMergeBoxesMode[categoryIndex]
+			if mode == "union" {
+				continue
+			}
+
+			if mode == "large" {
+				_, containedByOther := checkContainment(filteredBoxes, categoryIndex, mode)
+
+				for i := 0; i < len(containedByOther); i++ {
+					// 是true 的都是true
+					keepMask[i] = keepMask[i] && !containedByOther[i]
+				}
+			} else if mode == "small" {
+				// 源码不走这个分支
+				//containsOther, containedByOther := checkContainment(filteredBoxes, categoryIndex, mode)
+			}
+		}
+		// 过滤掉
+		for i := 0; i < filteredBoxesLen; i++ {
+			if keepMask[i] {
+				keepMaskBoxes = append(keepMaskBoxes, filteredBoxes[i])
+			}
+		}
+	}
+
+	sort.Slice(keepMaskBoxes, func(i, j int) bool {
+		return keepMaskBoxes[i].Order < keepMaskBoxes[j].Order
 	})
-	extractPolygonPointsByMasks(filteredBoxes, scale)
+	extractPolygonPointsByMasks(keepMaskBoxes, scale)
 
 }
 
@@ -305,6 +341,7 @@ func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 			if iouValue < threshold {
 				remaining = append(remaining, nextBox)
 			} else {
+				// 证明两个框的相似，那么就过滤掉最低的
 				log.Panicln("iouValue < threshold")
 			}
 		}
@@ -336,22 +373,37 @@ func IoU(a, b LayoutDetBox) float64 {
 	       │       B      │
 	       └──────────────┘
 	*/
+	//minX := box.Point[0].X
+	//minY := box.Point[0].Y
+	//maxX := box.Point[1].X
+	//maxY := box.Point[1].Y
+	//
+	//boxW, boxH := maxX-minX, maxY-minY
+	//
+	//// 默认矩形（四个顶点，顺序：左上、右上、右下、左下）
+	//rect := []image.Point{
+	//	{minX, minY},
+	//	{maxX, minY},
+	//	{maxX, maxY},
+	//	{minX, maxY},
+	//}
 
 	//取坐标
 
-	x1 := float64(a.Point[0].X)
-	y1 := float64(a.Point[0].Y)
-	x2 := float64(a.Point[1].X)
-	y2 := float64(a.Point[1].Y)
+	x1 := float64(a.Point[0])
+	y1 := float64(a.Point[1])
+	x2 := float64(a.Point[2])
+	y2 := float64(a.Point[3])
 
-	x1p := float64(b.Point[0].X)
-	y1p := float64(b.Point[0].Y)
-	x2p := float64(b.Point[1].X)
-	y2p := float64(b.Point[1].Y)
+	x1p := float64(b.Point[0])
+	y1p := float64(b.Point[1])
+	x2p := float64(b.Point[2])
+	y2p := float64(b.Point[3])
 
 	// intersection
 	x1i := math.Max(x1, x1p)
 	y1i := math.Max(y1, y1p)
+
 	x2i := math.Min(x2, x2p)
 	y2i := math.Min(y2, y2p)
 
@@ -384,7 +436,7 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox, scale []float32) {
 	for i := 0; i < len(layoutDetBox); i++ {
 		box := layoutDetBox[i]
 
-		maxW := box.Point[1].X - box.Point[0].Y
+		maxW := box.Point[3] - box.Point[0]
 		if maxBoxW < maxW {
 			maxBoxW = maxW
 		}
@@ -395,10 +447,10 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox, scale []float32) {
 	for i := 0; i < len(layoutDetBox); i++ {
 		box := layoutDetBox[i]
 		//  #2501,214,107,2846
-		minX := box.Point[0].X
-		minY := box.Point[0].Y
-		maxX := box.Point[1].X
-		maxY := box.Point[1].Y
+		minX := box.Point[0]
+		minY := box.Point[1]
+		maxX := box.Point[2]
+		maxY := box.Point[3]
 
 		boxW, boxH := maxX-minX, maxY-minY
 
@@ -440,6 +492,77 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox, scale []float32) {
 			continue
 		}
 
+		//# resize mask to match box size
+		//resized_mask = cv2.resize(
+		//	cropped.astype(np.uint8), (box_w, box_h), interpolation=cv2.INTER_NEAREST
+		//)
+
+		gocv.NewMatFromCMat(unsafe.Pointer(&cropped))
+
 	}
 
+}
+
+func checkContainment(boxes []LayoutDetBox, categoryIndex int, mode string) ([]bool, []bool) {
+	n := len(boxes)
+	//我包含了别人
+	containsOther := make([]bool, n)
+	// 我被别人包含
+	containedByOther := make([]bool, n)
+
+	for i := 0; i < n; i++ {
+		for j := 0; j < n; j++ {
+
+			if i == j {
+				continue
+			}
+			if categoryIndex != -1 && mode != "" {
+
+				if mode == "large" && boxes[j].ClsId == categoryIndex {
+					if IsContained(boxes[i], boxes[j]) {
+						containedByOther[i] = true
+						containsOther[j] = true
+					}
+				}
+
+				if mode == "small" && boxes[i].ClsId == categoryIndex {
+					if IsContained(boxes[i], boxes[j]) {
+						containedByOther[i] = true
+						containsOther[j] = true
+					}
+				}
+			} else {
+				if IsContained(boxes[i], boxes[j]) {
+					containedByOther[i] = true
+					containsOther[j] = true
+				}
+			}
+		}
+	}
+
+	return containsOther, containedByOther
+}
+
+func IsContained(box1, box2 LayoutDetBox) bool {
+
+	x1, y1, x2, y2 := box1.Point[0], box1.Point[1], box1.Point[2], box1.Point[3]
+	x1_p, y1_p, x2_p, y2_p := box2.Point[0], box2.Point[1], box2.Point[2], box2.Point[3]
+
+	box1Area := (x2 - x1) * (y2 - y1)
+
+	xi1 := max(x1, x1_p)
+	yi1 := max(y1, y1_p)
+	xi2 := min(x2, x2_p)
+	yi2 := min(y2, y2_p)
+
+	inter_width := max(0, xi2-xi1)
+	inter_height := max(0, yi2-yi1)
+	intersect_area := float64(inter_width) * float64(inter_height)
+
+	var iou = float64(0)
+
+	if box1Area > 0 {
+		iou = intersect_area / float64(box1Area)
+	}
+	return iou >= 0.9
 }
