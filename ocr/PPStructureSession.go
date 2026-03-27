@@ -80,16 +80,16 @@ func NewPPStructureSession(config *PPStructureOCRConfig) (*PPStructureSession, e
 	}
 
 	// CLS
-	docLayoutPlusLSessionInternal, err := ort.NewDynamicAdvancedSession(
+	layoutDetSessionInternal, err := ort.NewDynamicAdvancedSession(
 		config.DocLayoutPlusLModelPath,
 		[]string{"im_shape", "image", "scale_factor"},
 		[]string{"fetch_name_0", "fetch_name_1", "fetch_name_2"},
 		options,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create classification session: %w", err)
+		return nil, fmt.Errorf("create layoutDet Session: %w", err)
 	}
-	docLayoutSession := NewLayoutDetSession(docLayoutPlusLSessionInternal)
+	docLayoutSession := NewLayoutDetSession(layoutDetSessionInternal)
 	// 构建 session
 	session := &PPStructureSession{
 		LayoutDetSession: docLayoutSession,

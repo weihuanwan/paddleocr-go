@@ -7,7 +7,6 @@ import (
 	"math"
 	"slices"
 	"sort"
-	"unsafe"
 
 	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
@@ -27,7 +26,6 @@ type LayoutDetSession struct {
 	LayoutMergeBoxesMode []string // 标签字典
 	Threshold            float32  // 置信度
 }
-
 type LayoutDetBox struct {
 	ClsId int
 	Label string
@@ -60,6 +58,7 @@ func NewLayoutDetSession(onnxSession *ort.DynamicAdvancedSession) *LayoutDetSess
 		beta[i] = -mean[i] / std[i]
 	}
 
+	//标签
 	var labels = []string{"abstract", "algorithm", "aside_text", "chart",
 		"content", "display_formula", "doc_title", "figure_title", "footer",
 		"footer_image", "footnote", "formula_number", "header", "header_image",
@@ -70,6 +69,7 @@ func NewLayoutDetSession(onnxSession *ort.DynamicAdvancedSession) *LayoutDetSess
 	var layoutMergeBoxesMode = []string{"union", "union", "union", "large", "union",
 		"large", "large", "union", "union", "union", "union", "union", "union", "union", "union", "large", "union",
 		"large", "union", "union", "union", "union", "union", "union", "union"}
+
 	return &LayoutDetSession{
 		onnxSession,
 		alpha,
@@ -105,21 +105,21 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, err
 	// 1.输入图像尺寸
 	imageTensor, err := ort.NewTensor(ort.NewShape(1, 2), []float32{float32(resizedImage.Rows()), float32(resizedImage.Cols())})
 	if err != nil {
-		return nil, fmt.Errorf("imageTensor input tensor error", err.Error())
+		return nil, fmt.Errorf("imageTensor input tensor error %w", err.Error())
 	}
 	defer imageTensor.Destroy()
 
 	// 2. 图像数据
 	dataTensor, err := ort.NewTensor(ort.NewShape(1, 3, int64(resizedImage.Rows()), int64(resizedImage.Cols())), imageCHW)
 	if err != nil {
-		return nil, fmt.Errorf("dataTensor input tensor error", err.Error())
+		return nil, fmt.Errorf("dataTensor input tensor error %w", err.Error())
 	}
 
 	defer dataTensor.Destroy()
 	// 3. resize 缩放比例
 	scaleFactorTensor, err := ort.NewTensor(ort.NewShape(1, 2), scale)
 	if err != nil {
-		return nil, fmt.Errorf("scaleFactorTensor input tensor error", err.Error())
+		return nil, fmt.Errorf("scaleFactorTensor input tensor error %w", err.Error())
 	}
 	defer scaleFactorTensor.Destroy()
 
@@ -128,7 +128,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, err
 	output0Tensor, err := ort.NewEmptyTensor[float32](ort.NewShape(maxDet, 7))
 
 	if err != nil {
-		return nil, fmt.Errorf("output0Tensor output tensor error", err.Error())
+		return nil, fmt.Errorf("output0Tensor output tensor error %w", err.Error())
 	}
 
 	defer output0Tensor.Destroy()
@@ -136,7 +136,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, err
 	// 5.输出实际框数量
 	output1Tensor, err := ort.NewEmptyTensor[int32](ort.NewShape(1))
 	if err != nil {
-		return nil, fmt.Errorf("output1Tensor output tensor error", err.Error())
+		return nil, fmt.Errorf("output1Tensor output tensor error %w", err.Error())
 	}
 
 	defer output1Tensor.Destroy()
@@ -144,14 +144,14 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, err
 	// 6. 分割 mask,	最多 300 个检测框,每个框对应一个 200×200 的二值图
 	output2Tensor, err := ort.NewEmptyTensor[int32](ort.NewShape(maxDet, 200, 200))
 	if err != nil {
-		return nil, fmt.Errorf("output2Tensor output tensor error", err.Error())
+		return nil, fmt.Errorf("output2Tensor output tensor error %w", err.Error())
 	}
 	defer output2Tensor.Destroy()
 
 	// 检测（核心）
 	err = layoutDet.OnnxSession.Run([]ort.Value{imageTensor, dataTensor, scaleFactorTensor}, []ort.Value{output0Tensor, output1Tensor, output2Tensor})
 	if err != nil {
-		return nil, fmt.Errorf("layoutDet.OnnxSession.Run() error", err.Error())
+		return nil, fmt.Errorf("layoutDet.OnnxSession.Run() error %w", err.Error())
 	}
 
 	layoutDet.formatOutput(
@@ -183,9 +183,9 @@ func (layoutDet *LayoutDetSession) resize(imageMat *gocv.Mat) (*gocv.Mat, []floa
 
 }
 
-func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, masks []int32, originImageH int, originImageW int, scale []float32) {
+func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
+	masks []int32, originImageH int, originImageW int, scale []float32) *LayoutDetResult {
 
-	// [ 225. 2431. 2913. 3956.]
 	step := 7
 	maskSize := 200 * 200
 	layoutDetBoxs := make([]LayoutDetBox, 0)
@@ -290,8 +290,10 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32, 
 	sort.Slice(keepMaskBoxes, func(i, j int) bool {
 		return keepMaskBoxes[i].Order < keepMaskBoxes[j].Order
 	})
+
 	extractPolygonPointsByMasks(keepMaskBoxes, scale)
 
+	return nil
 }
 
 // 处理重
@@ -474,32 +476,52 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox, scale []float32) {
 		maxH := int(math.Min(math.Max(0, math.Round(float64(maxY)*float64(scaleH))), float64(hm))) //176
 
 		mask := box.Mask
-
-		cropped := make([]int32, 0)
-		for i := minH; i <= maxH; i++ {
-			maskStart := i*wm + minW
-			maskEnd := i*wm + maxW
+		rows := maxH - minH + 1
+		cols := (wm + maxW) - (wm + minW)
+		mat := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
+		var count = int32(0)
+		for row := minH; row <= maxH; row++ {
+			maskStart := row*wm + minW
+			maskEnd := row*wm + maxW
 			// 找到
 			m := mask[maskStart:maskEnd]
-			//fmt.Println(m)
-			cropped = append(cropped, m...)
-
+			for w := 0; w < len(m); w++ {
+				h := row - minH
+				mat.SetUCharAt(h, w, uint8(m[w]))
+				count += m[w]
+			}
 		}
-
-		count := common.Sum(cropped...)
 		if count == 0 {
 			polygonPoints = append(polygonPoints, rect)
+			mat.Close()
 			continue
 		}
+		resizedMask := gocv.NewMat()
+		err := gocv.Resize(mat, &resizedMask, image.Pt(boxW, boxH), 0, 0, gocv.InterpolationNearestNeighbor)
 
-		//# resize mask to match box size
-		//resized_mask = cv2.resize(
-		//	cropped.astype(np.uint8), (box_w, box_h), interpolation=cv2.INTER_NEAREST
-		//)
+		if err != nil {
+			panic(err)
+		}
 
-		gocv.NewMatFromCMat(unsafe.Pointer(&cropped))
+		maxAllowedDist := maxBoxW
+		if boxW > int(float32(maxBoxW)*0.6) {
+			maxAllowedDist = boxW
+		}
 
+		mask2polygon(resizedMask, maxAllowedDist)
 	}
+
+}
+
+func mask2polygon(mask gocv.Mat, maxAllowedDist int) {
+	epsilonRatio := 0.004
+	pv := gocv.FindContours(mask, gocv.RetrievalExternal, gocv.ChainApproxSimple)
+	cnt := pv.At(0)
+	epsilon := epsilonRatio * gocv.ArcLength(cnt, true)
+
+	approxCnt := gocv.ApproxPolyDP(cnt, epsilon, true)
+
+	fmt.Println(approxCnt.ToPoints())
 
 }
 
