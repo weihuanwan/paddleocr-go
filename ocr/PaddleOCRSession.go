@@ -250,7 +250,7 @@ func (session *PaddleOCRSession) Destroy() {
 	}
 
 }
-func initOrt(libPath string) error {
+func InitOrt(libPath string) error {
 	var err error
 	ortOnce.Do(func() {
 		ort.SetSharedLibraryPath(libPath)
@@ -279,7 +279,7 @@ func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
 	}
 
 	// ✅ 初始化 ONNX（只执行一次）
-	if err := initOrt(config.OnnxRuntimeLibPath); err != nil {
+	if err := InitOrt(config.OnnxRuntimeLibPath); err != nil {
 		return nil, fmt.Errorf("initialize ONNX Runtime: %w", err)
 	}
 
