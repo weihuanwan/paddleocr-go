@@ -81,7 +81,7 @@ func NewLayoutDetSession(onnxSession *ort.DynamicAdvancedSession) *LayoutDetSess
 	}
 }
 
-func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, error) {
+func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) (*LayoutDetResult, error) {
 	// 缩放
 	resizedImage, scale, err := layoutDet.resize(originImage)
 	if err != nil {
@@ -154,7 +154,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, err
 		return nil, fmt.Errorf("layoutDet.OnnxSession.Run() error %w", err.Error())
 	}
 
-	layoutDet.formatOutput(
+	layoutDetResult, err := layoutDet.formatOutput(
 		output0Tensor.GetData(),
 		output1Tensor.GetData(),
 		output2Tensor.GetData(),
@@ -162,7 +162,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*DetResult, err
 		originImage.Cols(),
 		scale)
 
-	return nil, err
+	return layoutDetResult, err
 }
 
 // 缩放图片
@@ -184,7 +184,7 @@ func (layoutDet *LayoutDetSession) resize(imageMat *gocv.Mat) (*gocv.Mat, []floa
 }
 
 func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
-	masks []int32, originImageH int, originImageW int, scale []float32) *LayoutDetResult {
+	masks []int32, originImageH int, originImageW int, scale []float32) (*LayoutDetResult, error) {
 
 	step := 7
 	maskSize := 200 * 200
@@ -293,7 +293,7 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 
 	extractPolygonPointsByMasks(keepMaskBoxes, scale)
 
-	return nil
+	return nil, nil
 }
 
 // 处理重
