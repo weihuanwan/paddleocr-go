@@ -344,7 +344,7 @@ func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 				remaining = append(remaining, nextBox)
 			} else {
 				// 证明两个框的相似，那么就过滤掉最低的
-				log.Panicln("iouValue < threshold")
+				log.Println("iouValue < threshold")
 			}
 		}
 
