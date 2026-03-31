@@ -89,8 +89,8 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) (*LayoutDetResult,
 	}
 
 	defer resizedImage.Close()
-	// 归一化 # [0.00392156862745098, 0.00392156862745098, 0.00392156862745098]
-	//# [-0.0, -0.0, -0.0]
+	// 归一化  [0.00392156862745098, 0.00392156862745098, 0.00392156862745098]
+	// [-0.0, -0.0, -0.0]
 	imageNormalize, err := common.Normalize(resizedImage, layoutDet.Alpha, layoutDet.Beta)
 
 	if err != nil {
@@ -448,7 +448,7 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox, scale []float32) {
 
 	for i := 0; i < len(layoutDetBox); i++ {
 		box := layoutDetBox[i]
-		//  #2501,214,107,2846
+		//  2501,214,107,2846
 		minX := box.Point[0]
 		minY := box.Point[1]
 		maxX := box.Point[2]
@@ -521,6 +521,7 @@ func mask2polygon(mask gocv.Mat, maxAllowedDist int) {
 
 	approxCnt := gocv.ApproxPolyDP(cnt, epsilon, true)
 
+	extractCustomVertices(approxCnt.ToPoints(), maxAllowedDist)
 	fmt.Println(approxCnt.ToPoints())
 
 }
@@ -587,4 +588,203 @@ func IsContained(box1, box2 LayoutDetBox) bool {
 		iou = intersect_area / float64(box1Area)
 	}
 	return iou >= 0.9
+}
+
+type PointInfo struct {
+	Index    int
+	IsConvex bool
+	Angle    float32
+	v1       image.Point
+	v2       image.Point
+}
+
+// 提取自定义顶点
+func extractCustomVertices(points []image.Point, maxAllowedDist int) {
+	n := len(points)
+
+	pointInfos := make([]PointInfo, 0, n)
+
+	adjustedMaxDist := float64(maxAllowedDist) * 0.3
+	concaveIndices := make([]int, 0, n)
+	for i := 0; i < n; i++ {
+
+		prevIndex := (i - 1 + n) % n
+		currIndex := i
+		nextIndex := (i + 1) % n
+		// 上一个点 、当前点、下一个点，形成一个角
+		prevP, currP, nextP := points[prevIndex], points[currIndex], points[nextIndex]
+
+		// 上一个点 -当前点，下一个点减去当前点
+		v1 := image.Pt(
+			prevP.X-currP.X,
+			prevP.Y-currP.Y,
+		)
+		v2 := image.Pt(
+			nextP.X-currP.X,
+			nextP.Y-currP.Y,
+		)
+
+		// 计算是不是凸角
+		isConvexPoint := isConvex(prevP, currP, nextP)
+
+		// 计算角度
+		angle := angleBetweenVectors(v1, v2)
+
+		pointInfos = append(pointInfos, PointInfo{
+			Index:    currIndex,
+			IsConvex: isConvexPoint,
+			Angle:    float32(angle),
+			v1:       v1,
+			v2:       v2,
+		})
+
+		if !isConvexPoint {
+			// 是凹点的索引
+			concaveIndices = append(concaveIndices, i)
+		}
+	}
+	// 2. 筛选需要保留的凹点
+	preserveConcaveMap := make(map[int]bool)
+	if len(concaveIndices) > 1 {
+		groups := make([]int, 0)
+		currentGroup := []int{concaveIndices[0]}
+
+		for i := 1; i < len(concaveIndices); i++ {
+			// 判断是否连续 (包含首尾衔接)
+			if concaveIndices[i]-concaveIndices[i-1] == 1 {
+				currentGroup = append(currentGroup, concaveIndices[i])
+			} else {
+				if len(currentGroup) >= 2 {
+					groups = append(groups, currentGroup...)
+				}
+				currentGroup = []int{concaveIndices[i]}
+			}
+		}
+		// 处理最后一组
+		if len(currentGroup) >= 2 {
+			groups = append(groups, currentGroup...)
+		}
+
+		// 处理首尾闭合的特殊连续性
+		if concaveIndices[0] == 0 && concaveIndices[len(concaveIndices)-1] == n-1 {
+			// 如果 0 和 n-1 都在组里，说明首尾是连着的
+			// 补充逻辑：如果 currentGroup 包含 n-1 且 0 在第一组，手动合并（此处简化为 check groups 包含）
+			if slices.Contains(groups, 0) && slices.Contains(groups, n-1) {
+				// 已经都在 groups 里的情况不需要额外操作
+			}
+		}
+
+		for _, idx := range groups {
+			preserveConcaveMap[idx] = true
+		}
+	}
+
+	// 3. 确定初步保留点索引
+	keptPoints := make([]int, 0)
+	for i, info := range pointInfos {
+		if info.IsConvex || (preserveConcaveMap[i] && info.Angle >= 120) {
+			keptPoints = append(keptPoints, i)
+		}
+	}
+	// 4. 距离插值 (处理两点之间距离过大的情况)
+	finalIndicesMap := make(map[int]bool)
+
+	for i := 0; i < len(keptPoints); i++ {
+		// 当前id
+		currIdx := keptPoints[i]
+		// 下一个id
+		nextIdx := keptPoints[(i+1)%len(keptPoints)]
+
+		finalIndicesMap[currIdx] = true
+
+		currP, nextP := points[currIdx], points[nextIdx]
+
+		// 两个点的向量差
+		dist := math.Sqrt(math.Pow(float64(currP.X-nextP.X), 2) + math.Pow(float64(currP.Y-nextP.Y), 2))
+
+		// 计算两个点的欧几里得距离（直线距离）
+		if dist > adjustedMaxDist {
+			var intermediate []int
+
+			// 找出 current_idx 和 next_idx 之间被删除的那些点
+			if nextIdx > currIdx {
+				for j := currIdx + 1; j < nextIdx; j++ {
+					intermediate = append(intermediate, j)
+				}
+			} else {
+				for j := currIdx + 1; j < n; j++ {
+					intermediate = append(intermediate, j)
+				}
+				for j := 0; j < nextIdx; j++ {
+					intermediate = append(intermediate, j)
+				}
+			}
+
+			// 如果中间点很多，只取一部分（均匀取）
+			if len(intermediate) > 0 {
+				numNeeded := int(math.Ceil(dist/adjustedMaxDist)) - 1
+				if len(intermediate) <= numNeeded {
+					for _, idx := range intermediate {
+						finalIndicesMap[idx] = true
+					}
+				} else {
+					step := float64(len(intermediate)) / float64(numNeeded)
+					for k := 0; k < numNeeded; k++ {
+						finalIndicesMap[intermediate[int(float64(k)*step)]] = true
+					}
+				}
+			}
+		}
+	}
+
+}
+
+// 向量长度
+func norm(p image.Point) float64 {
+	return math.Sqrt(float64(p.X*p.X + p.Y*p.Y))
+}
+
+// 点积
+func dot(p1, p2 image.Point) float64 {
+	return float64(p1.X*p2.X + p1.Y*p2.Y)
+}
+
+// 两个向量夹角（角度）
+func angleBetweenVectors(v1, v2 image.Point) float64 {
+	n1 := norm(v1)
+	n2 := norm(v2)
+
+	if n1 == 0 || n2 == 0 {
+		return 0
+	}
+
+	cosTheta := dot(v1, v2) / (n1 * n2)
+
+	// 防止浮点误差
+	if cosTheta > 1 {
+		cosTheta = 1
+	}
+	if cosTheta < -1 {
+		cosTheta = -1
+	}
+
+	angleRad := math.Acos(cosTheta)
+	return angleRad * 180 / math.Pi
+}
+
+func isConvex(prev image.Point, curr image.Point, next image.Point) bool {
+	// 1. 计算进来的向量 (从 上一个点 指向 当前点)
+	v1 := image.Pt(
+		curr.X-prev.X,
+		curr.Y-prev.Y,
+	)
+	// 2. 计算出去的向量 (从 当前点 指向 下一个点)
+	v2 := image.Pt(
+		next.X-curr.X,
+		next.Y-curr.Y,
+	)
+	//# 3. 计算二维叉积 (Cross Product)
+	//# 公式：x1*y2 - x2*y1
+	cross := v1.X*v2.Y - v1.Y*v2.X
+	return cross < 0
 }
