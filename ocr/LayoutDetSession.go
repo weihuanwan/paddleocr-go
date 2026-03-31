@@ -723,11 +723,13 @@ func extractCustomVertices(points []image.Point, maxAllowedDist int) {
 			// 如果中间点很多，只取一部分（均匀取）
 			if len(intermediate) > 0 {
 				numNeeded := int(math.Ceil(dist/adjustedMaxDist)) - 1
+				// 如果小于这个添加全部进去
 				if len(intermediate) <= numNeeded {
 					for _, idx := range intermediate {
 						finalIndicesMap[idx] = true
 					}
 				} else {
+					// 取一部分
 					step := float64(len(intermediate)) / float64(numNeeded)
 					for k := 0; k < numNeeded; k++ {
 						finalIndicesMap[intermediate[int(float64(k)*step)]] = true
