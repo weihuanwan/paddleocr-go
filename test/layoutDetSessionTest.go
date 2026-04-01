@@ -48,15 +48,15 @@ func main() {
 		layoutDet := layoutDetResults[i]
 		point := layoutDet.Point
 
-		x1 := point[0].X
-		y1 := point[0].Y
-		x2 := point[1].X
-		y2 := point[1].Y
+		x1 := point[0]
+		y1 := point[1]
+		x2 := point[2]
+		y2 := point[3]
 
 		rect := image.Rect(x1, y1, x2, y2)
 
 		// 画矩形
-		gocv.Rectangle(&imageMat, rect, color.RGBA{255, 0, 0, 0}, 2)
+		gocv.Rectangle(&imageMat, rect, color.RGBA{255, 0, 0, 0}, 1)
 
 		// 写标签
 		label := fmt.Sprintf("%s %.2f", layoutDet.Label, layoutDet.Score)

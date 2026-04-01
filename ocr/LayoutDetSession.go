@@ -43,7 +43,7 @@ type LayoutDetResult struct {
 	Label         string        // 标签
 	Score         float32       // 置信度
 	Order         int           // 排序
-	Point         []image.Point // 四边形 位置
+	Point         []int         // 四边形 4个点位置
 	PolygonPoints []image.Point // 多边形位置
 	Mask          []int32
 }
@@ -91,8 +91,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResul
 	}
 
 	defer resizedImage.Close()
-	// 归一化  [0.00392156862745098, 0.00392156862745098, 0.00392156862745098]
-	// [-0.0, -0.0, -0.0]
+
 	imageNormalize, err := common.Normalize(resizedImage, layoutDet.Alpha, layoutDet.Beta)
 
 	if err != nil {
@@ -260,7 +259,6 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 	filteredBoxesLen := len(filteredBoxes)
 	keepMaskBoxes := make([]LayoutDetBox, 0, filteredBoxesLen)
 	if filteredBoxesLen > 0 {
-		// 225 2432 2913 3956  keep_mask = np.ones(len(boxes), dtype=bool)
 		keepMask := slices.Repeat([]bool{true}, filteredBoxesLen)
 
 		for categoryIndex := 0; categoryIndex < len(layoutDet.LayoutMergeBoxesMode); categoryIndex++ {
@@ -268,17 +266,12 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 			if mode == "union" {
 				continue
 			}
-
 			if mode == "large" {
 				_, containedByOther := checkContainment(filteredBoxes, categoryIndex, mode)
-
 				for i := 0; i < len(containedByOther); i++ {
 					// 是true 的都是true
 					keepMask[i] = keepMask[i] && !containedByOther[i]
 				}
-			} else if mode == "small" {
-				// TODO python 源码不走这个分支 就不写这个了。
-
 			}
 		}
 		// 过滤掉小框
@@ -313,7 +306,7 @@ func restructuredBoxes(results []*LayoutDetResult, polygonPoints [][]image.Point
 	for i := 0; i < len(results); i++ {
 		res := results[i]
 
-		xmin, ymin, xmax, ymax := res.Point[0].X, res.Point[0].Y, res.Point[1].X, res.Point[1].Y
+		xmin, ymin, xmax, ymax := res.Point[0], res.Point[1], res.Point[2], res.Point[3]
 
 		xmin = max(0, xmin)
 		ymin = max(0, ymin)
@@ -363,9 +356,8 @@ func unclipBoxes(boxes []LayoutDetBox, layoutUnclipRatio []float64) []*LayoutDet
 			Label: box.Label,
 			Score: box.Score,
 			Order: box.Order,
-			Point: []image.Point{
-				{newX1, newY1},
-				{newX2, newY2},
+			Point: []int{
+				newX1, newY1, newX2, newY2,
 			},
 			PolygonPoints: nil,
 			Mask:          nil,
