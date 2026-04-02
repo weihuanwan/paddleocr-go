@@ -529,7 +529,6 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 
 	for i := 0; i < len(layoutDetBox); i++ {
 		box := layoutDetBox[i]
-		//  2501,214,107,2846
 		minX := box.Point[0]
 		minY := box.Point[1]
 		maxX := box.Point[2]
