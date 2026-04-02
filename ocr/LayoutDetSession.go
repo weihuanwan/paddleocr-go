@@ -21,10 +21,10 @@ type LayoutDetSession struct {
 	Alpha       [3]float32
 	Beta        [3]float32
 
-	Resize               [2]int   // 缩放
+	Resize               [2]int   // 缩放大小，默认800*800
 	Labels               []string // 标签字典
 	LayoutMergeBoxesMode []string // 标签字典
-	Threshold            float32  // 置信度
+	Threshold            float32  // 置信度 默认 0.3
 }
 type LayoutDetBox struct {
 	ClsId int
@@ -61,16 +61,22 @@ func NewLayoutDetSession(onnxSession *ort.DynamicAdvancedSession) *LayoutDetSess
 	}
 
 	//标签
-	var labels = []string{"abstract", "algorithm", "aside_text", "chart",
-		"content", "display_formula", "doc_title", "figure_title", "footer",
-		"footer_image", "footnote", "formula_number", "header", "header_image",
-		"image", "inline_formula", "number", "paragraph_title",
-		"reference", "reference_content", "seal", "table",
-		"text", "vertical_text", "vision_footnote"}
-
-	var layoutMergeBoxesMode = []string{"union", "union", "union", "large", "union",
-		"large", "large", "union", "union", "union", "union", "union", "union", "union", "union", "large", "union",
-		"large", "union", "union", "union", "union", "union", "union", "union"}
+	var labels = []string{
+		"abstract", "algorithm", "aside_text", "chart", "content",
+		"display_formula", "doc_title", "figure_title", "footer", "footer_image",
+		"footnote", "formula_number", "header", "header_image", "image",
+		"inline_formula", "number", "paragraph_title", "reference", "reference_content",
+		"seal", "table", "text", "vertical_text", "vision_footnote"}
+	/**
+	和标签一一对应。如： table -> large 保留大框的
+	在实际项目中识别出一个表格出来，但是里面还有文字也识别出来了，所以要过滤小文本框保留大表格框,除非表格还包含了图片这些
+	*/
+	var layoutMergeBoxesMode = []string{
+		"union", "union", "union", "large", "union",
+		"large", "large", "union", "union", "union",
+		"union", "union", "union", "union", "union",
+		"large", "union", "large", "union", "union",
+		"union", "large", "union", "union", "union"}
 
 	return &LayoutDetSession{
 		onnxSession,
@@ -106,21 +112,21 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResul
 	// 1.输入图像尺寸
 	imageTensor, err := ort.NewTensor(ort.NewShape(1, 2), []float32{float32(resizedImage.Rows()), float32(resizedImage.Cols())})
 	if err != nil {
-		return nil, fmt.Errorf("imageTensor input tensor error %w", err.Error())
+		return nil, fmt.Errorf("layoutDet imageTensor input tensor error %w", err.Error())
 	}
 	defer imageTensor.Destroy()
 
 	// 2. 图像数据
 	dataTensor, err := ort.NewTensor(ort.NewShape(1, 3, int64(resizedImage.Rows()), int64(resizedImage.Cols())), imageCHW)
 	if err != nil {
-		return nil, fmt.Errorf("dataTensor input tensor error %w", err.Error())
+		return nil, fmt.Errorf("layoutDet dataTensor input tensor error %w", err.Error())
 	}
 
 	defer dataTensor.Destroy()
 	// 3. resize 缩放比例
 	scaleFactorTensor, err := ort.NewTensor(ort.NewShape(1, 2), scale)
 	if err != nil {
-		return nil, fmt.Errorf("scaleFactorTensor input tensor error %w", err.Error())
+		return nil, fmt.Errorf("layoutDet scaleFactorTensor input tensor error %w", err.Error())
 	}
 	defer scaleFactorTensor.Destroy()
 
@@ -129,7 +135,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResul
 	output0Tensor, err := ort.NewEmptyTensor[float32](ort.NewShape(maxDet, 7))
 
 	if err != nil {
-		return nil, fmt.Errorf("output0Tensor output tensor error %w", err.Error())
+		return nil, fmt.Errorf("layoutDet output0Tensor output tensor error %w", err.Error())
 	}
 
 	defer output0Tensor.Destroy()
@@ -137,7 +143,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResul
 	// 5.输出实际框数量
 	output1Tensor, err := ort.NewEmptyTensor[int32](ort.NewShape(1))
 	if err != nil {
-		return nil, fmt.Errorf("output1Tensor output tensor error %w", err.Error())
+		return nil, fmt.Errorf("layoutDet output1Tensor output tensor error %w", err.Error())
 	}
 
 	defer output1Tensor.Destroy()
@@ -145,14 +151,14 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResul
 	// 6. 像素级掩码,	最多 300 个检测框,每个框对应一个 200×200 的二值图
 	output2Tensor, err := ort.NewEmptyTensor[int32](ort.NewShape(maxDet, 200, 200))
 	if err != nil {
-		return nil, fmt.Errorf("output2Tensor output tensor error %w", err.Error())
+		return nil, fmt.Errorf("layoutDet output2Tensor output tensor error %w", err.Error())
 	}
 	defer output2Tensor.Destroy()
 
 	// 检测（核心）
 	err = layoutDet.OnnxSession.Run([]ort.Value{imageTensor, dataTensor, scaleFactorTensor}, []ort.Value{output0Tensor, output1Tensor, output2Tensor})
 	if err != nil {
-		return nil, fmt.Errorf("layoutDet.OnnxSession.Run() error %w", err.Error())
+		return nil, fmt.Errorf("layoutDet OnnxSession.Run() error %w", err.Error())
 	}
 
 	// 处理结果
@@ -186,29 +192,33 @@ func (layoutDet *LayoutDetSession) resize(imageMat *gocv.Mat) (*gocv.Mat, []floa
 }
 
 func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
-	masks []int32, originImageH int, originImageW int, scale []float32) ([]*LayoutDetResult, error) {
+	masks []int32, originImageH int, originImageW int,
+	scale []float32) ([]*LayoutDetResult, error) {
 
 	step := 7
 	maskSize := 200 * 200
 	layoutDetBoxs := make([]LayoutDetBox, 0)
+	// 1. 处理图片
 	for i := 0; i < len(boxes); i += step {
-		if boxes[i+0] > -1 && boxes[i+1] > layoutDet.Threshold {
 
+		if boxes[i+0] > -1 && boxes[i+1] > layoutDet.Threshold {
 			detIndex := i / step
 			maskStart := detIndex * maskSize
 			maskEnd := maskStart + maskSize
 			// 获取像素级掩码
 			mask := masks[maskStart:maskEnd]
+			clsId := int(boxes[i])
+			score := boxes[i+1]
 			// 取这个位置的
 			xmin := int(math.Round(float64(boxes[i+2])))
 			ymin := int(math.Round(float64(boxes[i+3])))
 			xmax := int(math.Round(float64(boxes[i+4])))
 			ymax := int(math.Round(float64(boxes[i+5])))
-			clsId := int(boxes[i])
+			order := int(boxes[i+6])
 			layoutDetResult := LayoutDetBox{
 				ClsId: clsId,
-				Score: boxes[i+1],
-				Order: int(boxes[i+6]),
+				Score: score,
+				Order: order,
 				Label: layoutDet.Labels[clsId],
 				Point: [4]int{xmin, ymin, xmax, ymax},
 				Mask:  mask,
@@ -221,6 +231,7 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 	layoutDetResultNMS := NMSLayout(layoutDetBoxs, 0.6, 0.98)
 
 	filteredBoxes := make([]LayoutDetBox, 0)
+	// 处理版面分析把当前输入的图片当做图片输出问题
 	if len(layoutDetResultNMS) > 0 {
 		areaThres := 0.93
 		if originImageW > originImageH {
@@ -237,17 +248,9 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 				xmax := min(originImageW, layoutDetResult.Point[2])
 				ymax := min(originImageH, layoutDetResult.Point[3])
 				boxArea := (xmax - xmin) * (ymax - ymin)
-
-				// 过滤超大图的
+				// 如果某个 image 框面积接近整张图面积，就把这个框过滤掉
 				if boxArea <= int(areaThres*float64(imgArea)) {
 					filteredBoxes = append(filteredBoxes, layoutDetResult)
-				} else {
-					log.Printf(
-						"[LayoutDet] filter large image box, area=%d, imgArea=%d, ratio=%.2f",
-						boxArea,
-						imgArea,
-						float64(boxArea)/float64(imgArea),
-					)
 				}
 			} else {
 				filteredBoxes = append(filteredBoxes, layoutDetResult)
@@ -262,11 +265,13 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 		keepMask := slices.Repeat([]bool{true}, filteredBoxesLen)
 
 		for categoryIndex := 0; categoryIndex < len(layoutDet.LayoutMergeBoxesMode); categoryIndex++ {
+			// 获取该标签合并方式
 			mode := layoutDet.LayoutMergeBoxesMode[categoryIndex]
 			if mode == "union" {
 				continue
 			}
-			if mode == "large" {
+
+			if mode == "large" { // 保留大框
 				_, containedByOther := checkContainment(filteredBoxes, categoryIndex, mode)
 				for i := 0; i < len(containedByOther); i++ {
 					// 是true 的都是true
@@ -286,7 +291,7 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 	sort.Slice(keepMaskBoxes, func(i, j int) bool {
 		return keepMaskBoxes[i].Order < keepMaskBoxes[j].Order
 	})
-	// 处理像素掩码得到一个多边形点位置
+	// 处理像素掩码得到一个多边形点位置（重点核心地方）
 	polygonPoints := extractPolygonPointsByMasks(keepMaskBoxes, scale, "auto")
 
 	layoutUnclipRatio := []float64{1.0, 1.0}
@@ -367,7 +372,11 @@ func unclipBoxes(boxes []LayoutDetBox, layoutUnclipRatio []float64) []*LayoutDet
 	return layoutDetResults
 }
 
-// 处理重
+/*
+	解决同一个区域出现多个标签问题，取最高的，过滤最低的
+
+TODO 存在问题，就是一个表格内置信度低，里面文本框信度高，这个会保留多个问题
+*/
 func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 
 	if len(boxes) == 0 {
@@ -407,6 +416,7 @@ func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 			threshold := iouDiff
 			// 判断类型是否一致
 			if currentClass == nextBoxClass {
+				// 如果类型是一致 使用0.6
 				threshold = iouSame
 			}
 
@@ -498,7 +508,8 @@ func IoU(a, b LayoutDetBox) float64 {
 	return interArea / union
 }
 
-func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox, scale []float32, layoutShapeMode string) [][]image.Point {
+func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
+	scale []float32, layoutShapeMode string) [][]image.Point {
 
 	scaleH := scale[0] / 4
 	scaleW := scale[1] / 4
@@ -538,7 +549,7 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox, scale []float32, l
 			polygonPoints = append(polygonPoints, rect)
 			continue
 		}
-		// 14
+
 		minW := int(math.Min(math.Max(0, math.Round(float64(minX)*float64(scaleW))), float64(wm)))
 		maxW := int(math.Min(math.Max(0, math.Round(float64(maxX)*float64(scaleW))), float64(wm))) //183
 
