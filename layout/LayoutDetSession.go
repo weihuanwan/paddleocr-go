@@ -1,4 +1,4 @@
-package ocr
+package layout
 
 import (
 	"fmt"
@@ -270,13 +270,21 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 			if mode == "union" {
 				continue
 			}
-
-			if mode == "large" { // 保留大框
+			if mode == "large" { // 保留大框 排除小框
 				_, containedByOther := checkContainment(filteredBoxes, categoryIndex, mode)
 				for i := 0; i < len(containedByOther); i++ {
 					// 是true 的都是true
 					keepMask[i] = keepMask[i] && !containedByOther[i]
 				}
+			} else if mode == "small" { // 保留小框 排除大框
+				containsOther, containsByOther := checkContainment(filteredBoxes, categoryIndex, mode)
+				for i := 0; i < len(containsByOther); i++ {
+					containByOther := !containsByOther[i]
+					containOther := containsOther[i]
+					condition := containByOther || containOther
+					keepMask[i] = keepMask[i] && condition
+				}
+
 			}
 		}
 		// 过滤掉小框
@@ -291,15 +299,19 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 	sort.Slice(keepMaskBoxes, func(i, j int) bool {
 		return keepMaskBoxes[i].Order < keepMaskBoxes[j].Order
 	})
-	// 处理像素掩码得到一个多边形点位置（重点核心地方）
-	polygonPoints := extractPolygonPointsByMasks(keepMaskBoxes, scale, "auto")
+	/**
+	TODO 代开发完善
+	处理像素掩码得到一个多边形点位置（重点核心地方）
+
+	*/
+	//polygonPoints := extractPolygonPointsByMasks(keepMaskBoxes, scale, "auto")
 
 	layoutUnclipRatio := []float64{1.0, 1.0}
 	unclipResult := unclipBoxes(keepMaskBoxes, layoutUnclipRatio)
 
 	layoutDetResults := restructuredBoxes(
 		unclipResult,
-		polygonPoints,
+		nil,
 		originImageH,
 		originImageW,
 	)
@@ -373,9 +385,7 @@ func unclipBoxes(boxes []LayoutDetBox, layoutUnclipRatio []float64) []*LayoutDet
 }
 
 /*
-	解决同一个区域出现多个标签问题，取最高的，过滤最低的
-
-TODO 存在问题，就是一个表格内置信度低，里面文本框信度高，这个会保留多个问题
+解决同一个区域出现多个标签问题，取最高的，过滤最低的
 */
 func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 
@@ -423,9 +433,6 @@ func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 			// if iou < threshold → keep
 			if iouValue < threshold {
 				remaining = append(remaining, nextBox)
-			} else {
-				// 证明两个框的相似，那么就过滤掉最低的
-				log.Println("iouValue < threshold")
 			}
 		}
 

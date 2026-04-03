@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"log"
 
+	"github.com/weihuanwan/paddleocr-go/layout"
 	"github.com/weihuanwan/paddleocr-go/ocr"
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
@@ -33,7 +34,7 @@ func main() {
 		panic(err)
 	}
 
-	docLayoutSession := ocr.NewLayoutDetSession(layoutDetSessionInternal)
+	docLayoutSession := layout.NewLayoutDetSession(layoutDetSessionInternal)
 
 	imagePath := "D:\\workspaces\\paddleocr-go\\huqi.png"
 
