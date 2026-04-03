@@ -134,10 +134,6 @@ func (det *DetOnnxSession) resize(originImage *gocv.Mat) (*gocv.Mat, []int, erro
 
 	}
 
-	//ratioH := float64(resizeH) / float64(origHeight)
-	//
-	//ratioW := float64(resizeW) / float64(origWidth)
-
 	return &resizedImage, []int{origHeight, origWidth, resizeH, resizeW}, nil
 
 }

@@ -16,8 +16,8 @@ import (
 type TableClsOnnxSession struct {
 	OnnxSession     *ort.DynamicAdvancedSession
 	Labels          []string // 标签字典
-	targetShortEdge int      // 标签字典
-	CropSize        [2]int   //  (可选) 识方向模型裁剪大小 默认{224, 224}
+	targetShortEdge int
+	CropSize        [2]int //  (可选) 识方向模型裁剪大小 默认{224, 224}
 	Alpha           [3]float32
 	Beta            [3]float32
 }

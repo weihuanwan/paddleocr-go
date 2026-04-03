@@ -101,8 +101,6 @@ func NewDefaultPaddleOCRConfig(
 		Alpha:              alpha,
 		Beta:               beta,
 		RecImageShape:      [4]int{3, 48, 320, 3200},
-		ClsCropSize:        [2]int{224, 224},
-		ClsMap:             [4]int{0, 90, 180, 270},
 		UseCuda:            useCuda,
 		NumThreads:         10,
 		UnclipRatio:        1.5,
@@ -368,13 +366,9 @@ func NewPaddleOCRSession(config *PaddleOCRConfig) (*PaddleOCRSession, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load dictionary file: %w", err)
 	}
-
 	// 构建 session
 	session := &PaddleOCRSession{
-		clsSession: &ClsOnnxSession{
-			OnnxSession: clsSessionInternal,
-			Config:      config,
-		},
+		clsSession: NewDefaultTableClsOnnxSession(clsSessionInternal),
 		detSession: &DetOnnxSession{
 			OnnxSession: detSessionInternal,
 			Config:      config,

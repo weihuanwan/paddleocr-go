@@ -76,3 +76,18 @@ func HWCToCHW(resizedImage *gocv.Mat) []float32 {
 	}
 	return chw
 }
+
+func GetNormalizeAlphaBeta() ([3]float32, [3]float32) {
+	scale := float32(1.0 / 255.0)
+	mean := []float32{0.485, 0.456, 0.406}
+	std := []float32{0.229, 0.224, 0.225}
+	var alpha [3]float32
+	var beta [3]float32
+
+	for i := 0; i < 3; i++ {
+		alpha[i] = scale / std[i]
+		beta[i] = -mean[i] / std[i]
+	}
+
+	return alpha, beta
+}

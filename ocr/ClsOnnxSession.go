@@ -3,7 +3,6 @@ package ocr
 import (
 	"fmt"
 	"image"
-	"log"
 	"math"
 
 	"github.com/weihuanwan/paddleocr-go/common"
@@ -13,8 +12,34 @@ import (
 
 type ClsOnnxSession struct {
 	OnnxSession *ort.DynamicAdvancedSession
-	Config      *PaddleOCRConfig
+
+	Labels   [4]int // 标签字典
+	CropSize [2]int
+	Alpha    [3]float32
+	Beta     [3]float32
 }
+
+func NewDefaultTableClsOnnxSession(onnxSession *ort.DynamicAdvancedSession) *ClsOnnxSession {
+	alpha, beta := common.GetNormalizeAlphaBeta()
+	return &ClsOnnxSession{
+		OnnxSession: onnxSession,
+		Labels:      [4]int{0, 90, 180, 270},
+		CropSize:    [2]int{224, 224},
+		Alpha:       alpha,
+		Beta:        beta,
+	}
+}
+
+func NewTableClsOnnxSession(onnxSession *ort.DynamicAdvancedSession, alpha [3]float32, beta [3]float32) *ClsOnnxSession {
+	return &ClsOnnxSession{
+		OnnxSession: onnxSession,
+		Labels:      [4]int{0, 90, 180, 270},
+		CropSize:    [2]int{224, 224},
+		Alpha:       alpha,
+		Beta:        beta,
+	}
+}
+
 type ClsResult struct {
 	Label int
 	Index int
@@ -34,7 +59,7 @@ func (cls *ClsOnnxSession) Run(image *gocv.Mat) (*ClsResult, error) {
 	cropImage := cls.crop(resizeImage)
 	defer cropImage.Close()
 
-	normalizeImage, err := common.Normalize(cropImage, cls.Config.Alpha, cls.Config.Beta)
+	normalizeImage, err := common.Normalize(cropImage, cls.Alpha, cls.Beta)
 	if err != nil {
 		return nil, err
 	}
@@ -78,10 +103,7 @@ func (cls *ClsOnnxSession) Run(image *gocv.Mat) (*ClsResult, error) {
 			maxIdx = i
 		}
 	}
-	label := cls.Config.ClsMap[maxIdx]
-	if cls.Config.UseLog {
-		log.Printf("cls label %d score %f", label, maxScore)
-	}
+	label := cls.Labels[maxIdx]
 
 	return &ClsResult{
 		Label: label,
@@ -124,7 +146,7 @@ func (cls *ClsOnnxSession) crop(resizeImage *gocv.Mat) *gocv.Mat {
 	h := resizeImage.Rows()
 	w := resizeImage.Cols()
 
-	cw, ch := cls.Config.ClsCropSize[0], cls.Config.ClsCropSize[1]
+	cw, ch := cls.CropSize[0], cls.CropSize[1]
 
 	x1 := max(0, (w-cw)/2)
 	y1 := max(0, (h-ch)/2)
