@@ -34,7 +34,8 @@ func main() {
 
 	docLayoutSession := table.NewTableClsOnnxSession(layoutDetSessionInternal)
 
-	imagePath := "D:\\workspaces\\paddleocr-go\\ 11 layout_result.jpg"
+	imagePath := "test/images/table_recognition1.jpg"
+	//imagePath := "test/images/table_recognition2.jpg"
 
 	imageMat := gocv.IMRead(imagePath, gocv.IMReadColor)
 	layoutDetResults, err := docLayoutSession.Run(&imageMat)

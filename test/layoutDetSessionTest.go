@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"image"
-	"image/color"
 	"log"
 
 	"github.com/weihuanwan/paddleocr-go/layout"
@@ -44,40 +43,40 @@ func main() {
 		panic(err)
 	}
 
-	for i := 0; i < len(layoutDetResults); i++ {
-
-		layoutDet := layoutDetResults[i]
-		point := layoutDet.Point
-
-		x1 := point[0]
-		y1 := point[1]
-		x2 := point[2]
-		y2 := point[3]
-
-		rect := image.Rect(x1, y1, x2, y2)
-
-		// 画矩形
-		gocv.Rectangle(&imageMat, rect, color.RGBA{255, 0, 0, 0}, 1)
-
-		// 写标签
-		label := fmt.Sprintf("%s %.2f", layoutDet.Label, layoutDet.Score)
-
-		pt := image.Pt(x1, y1-5)
-		gocv.PutText(&imageMat, label, pt,
-			gocv.FontHersheySimplex,
-			0.7,
-			color.RGBA{0, 255, 0, 0},
-			2)
-
-		// 顺序号
-		orderText := fmt.Sprintf("%d", layoutDet.Order)
-		gocv.PutText(&imageMat, orderText,
-			image.Pt(x1, y1-25),
-			gocv.FontHersheySimplex,
-			0.8,
-			color.RGBA{255, 0, 255, 0},
-			2)
-	}
+	//for i := 0; i < len(layoutDetResults); i++ {
+	//
+	//	layoutDet := layoutDetResults[i]
+	//	point := layoutDet.Point
+	//
+	//	x1 := point[0]
+	//	y1 := point[1]
+	//	x2 := point[2]
+	//	y2 := point[3]
+	//
+	//	rect := image.Rect(x1, y1, x2, y2)
+	//
+	//	// 画矩形
+	//	gocv.Rectangle(&imageMat, rect, color.RGBA{255, 0, 0, 0}, 1)
+	//
+	//	// 写标签
+	//	label := fmt.Sprintf("%s %.2f", layoutDet.Label, layoutDet.Score)
+	//
+	//	pt := image.Pt(x1, y1-5)
+	//	gocv.PutText(&imageMat, label, pt,
+	//		gocv.FontHersheySimplex,
+	//		0.7,
+	//		color.RGBA{0, 255, 0, 0},
+	//		2)
+	//
+	//	// 顺序号
+	//	orderText := fmt.Sprintf("%d", layoutDet.Order)
+	//	gocv.PutText(&imageMat, orderText,
+	//		image.Pt(x1, y1-25),
+	//		gocv.FontHersheySimplex,
+	//		0.8,
+	//		color.RGBA{255, 0, 255, 0},
+	//		2)
+	//}
 
 	//// 最后统一显示
 	//w := gocv.NewWindow("layout")
@@ -93,7 +92,7 @@ func main() {
 		rect := image.Rect(point[0], point[1], point[2], point[3])
 
 		cropImage := imageMat.Region(rect)
-		name := fmt.Sprintf(" %d layout_result.jpg", i)
+		name := fmt.Sprintf("%dlayout_result.jpg", i)
 
 		gocv.IMWrite(name, cropImage)
 
