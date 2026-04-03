@@ -94,7 +94,11 @@ func (cls *ClsOnnxSession) resize(originImage *gocv.Mat) (*gocv.Mat, error) {
 
 	rgbOriginImage := gocv.NewMat()
 	// bgr 转换 rgb
-	gocv.CvtColor(*originImage, &rgbOriginImage, gocv.ColorBGRToRGB)
+	err := gocv.CvtColor(*originImage, &rgbOriginImage, gocv.ColorBGRToRGB)
+
+	if err != nil {
+		return nil, fmt.Errorf("cls Color BGR To RGB Error %w", err)
+	}
 
 	h := originImage.Rows()
 	w := originImage.Cols()
@@ -106,11 +110,11 @@ func (cls *ClsOnnxSession) resize(originImage *gocv.Mat) (*gocv.Mat, error) {
 
 	resizeImage := gocv.NewMat()
 
-	err := gocv.Resize(rgbOriginImage,
+	err = gocv.Resize(rgbOriginImage,
 		&resizeImage, image.Pt(resizeW, resizeH), 0, 0, gocv.InterpolationLinear)
 
 	if err != nil {
-		return nil, fmt.Errorf("cls resize error")
+		return nil, fmt.Errorf("cls resize error %w", err)
 	}
 
 	return &resizeImage, nil
@@ -128,7 +132,6 @@ func (cls *ClsOnnxSession) crop(resizeImage *gocv.Mat) *gocv.Mat {
 	x2 := min(w, x1+cw)
 	y2 := min(h, y1+ch)
 
-	// 使用Region方法裁剪（推荐）
 	croppedRegion := resizeImage.Region(image.Rect(x1, y1, x2, y2))
 	return &croppedRegion
 }

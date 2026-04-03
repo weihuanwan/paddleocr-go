@@ -85,23 +85,20 @@ func main() {
 	//w.WaitKey(0)
 	// 保存图片
 	gocv.IMWrite("layout_result.jpg", imageMat)
-	//for i := 0; i < len(layoutDetResults); i++ {
-	//
-	//	layoutDet := layoutDetResults[i]
-	//	point := layoutDet.Point
-	//
-	//	rect := image.Rect(point[0].X, point[0].Y, point[1].X, point[1].Y)
-	//
-	//	//cropImage := imageMat.Region(rect)
-	//
-	//
-	//	w := gocv.NewWindow("image")
-	//	w.ResizeWindow(cropImage.Cols(), cropImage.Rows())
-	//	w.IMShow(cropImage)
-	//	w.WaitKey(0)
-	//
-	//	fmt.Println(layoutDet.Label)
-	//
-	//}
+	for i := 0; i < len(layoutDetResults); i++ {
+
+		layoutDet := layoutDetResults[i]
+		point := layoutDet.Point
+
+		rect := image.Rect(point[0], point[1], point[2], point[3])
+
+		cropImage := imageMat.Region(rect)
+		name := fmt.Sprintf(" %d layout_result.jpg", i)
+
+		gocv.IMWrite(name, cropImage)
+
+		fmt.Println(layoutDet.Label)
+
+	}
 
 }

@@ -3,7 +3,6 @@ package layout
 import (
 	"fmt"
 	"image"
-	"log"
 	"math"
 	"slices"
 	"sort"
@@ -112,21 +111,21 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResul
 	// 1.输入图像尺寸
 	imageTensor, err := ort.NewTensor(ort.NewShape(1, 2), []float32{float32(resizedImage.Rows()), float32(resizedImage.Cols())})
 	if err != nil {
-		return nil, fmt.Errorf("layoutDet imageTensor input tensor error %w", err.Error())
+		return nil, fmt.Errorf("LayoutDetSession imageTensor input tensor error %w", err.Error())
 	}
 	defer imageTensor.Destroy()
 
 	// 2. 图像数据
 	dataTensor, err := ort.NewTensor(ort.NewShape(1, 3, int64(resizedImage.Rows()), int64(resizedImage.Cols())), imageCHW)
 	if err != nil {
-		return nil, fmt.Errorf("layoutDet dataTensor input tensor error %w", err.Error())
+		return nil, fmt.Errorf("LayoutDetSession dataTensor input tensor error %w", err.Error())
 	}
 
 	defer dataTensor.Destroy()
 	// 3. resize 缩放比例
 	scaleFactorTensor, err := ort.NewTensor(ort.NewShape(1, 2), scale)
 	if err != nil {
-		return nil, fmt.Errorf("layoutDet scaleFactorTensor input tensor error %w", err.Error())
+		return nil, fmt.Errorf("LayoutDetSession scaleFactorTensor input tensor error %w", err.Error())
 	}
 	defer scaleFactorTensor.Destroy()
 
@@ -135,7 +134,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResul
 	output0Tensor, err := ort.NewEmptyTensor[float32](ort.NewShape(maxDet, 7))
 
 	if err != nil {
-		return nil, fmt.Errorf("layoutDet output0Tensor output tensor error %w", err.Error())
+		return nil, fmt.Errorf("LayoutDetSession output0Tensor output tensor error %w", err.Error())
 	}
 
 	defer output0Tensor.Destroy()
@@ -143,7 +142,7 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResul
 	// 5.输出实际框数量
 	output1Tensor, err := ort.NewEmptyTensor[int32](ort.NewShape(1))
 	if err != nil {
-		return nil, fmt.Errorf("layoutDet output1Tensor output tensor error %w", err.Error())
+		return nil, fmt.Errorf("LayoutDetSession output1Tensor output tensor error %w", err.Error())
 	}
 
 	defer output1Tensor.Destroy()
@@ -151,14 +150,14 @@ func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResul
 	// 6. 像素级掩码,	最多 300 个检测框,每个框对应一个 200×200 的二值图
 	output2Tensor, err := ort.NewEmptyTensor[int32](ort.NewShape(maxDet, 200, 200))
 	if err != nil {
-		return nil, fmt.Errorf("layoutDet output2Tensor output tensor error %w", err.Error())
+		return nil, fmt.Errorf("LayoutDetSession output2Tensor output tensor error %w", err.Error())
 	}
 	defer output2Tensor.Destroy()
 
 	// 检测（核心）
 	err = layoutDet.OnnxSession.Run([]ort.Value{imageTensor, dataTensor, scaleFactorTensor}, []ort.Value{output0Tensor, output1Tensor, output2Tensor})
 	if err != nil {
-		return nil, fmt.Errorf("layoutDet OnnxSession.Run() error %w", err.Error())
+		return nil, fmt.Errorf("LayoutDetSession OnnxSession.Run() error %w", err.Error())
 	}
 
 	// 处理结果
@@ -181,7 +180,7 @@ func (layoutDet *LayoutDetSession) resize(imageMat *gocv.Mat) (*gocv.Mat, []floa
 	err := gocv.Resize(*imageMat, &resizeMat, image.Pt(layoutDet.Resize[0], layoutDet.Resize[1]), 0, 0, gocv.InterpolationCubic)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("DocLayoutPlusLSession resize failed: %v", err)
+		return nil, nil, fmt.Errorf("LayoutDetSession resize failed: %v", err)
 	}
 
 	scaleW := float32(layoutDet.Resize[0]) / float32(imageMat.Cols())
@@ -924,7 +923,6 @@ func extractCustomVertices(points []image.Point, maxAllowedDist int) []image.Poi
 		currP := points[idx]
 
 		if info.IsConvex && math.Abs(float64(info.Angle-float32(sharpAngleThresh))) < 1 {
-			log.Println("联系开发人员做出来")
 			res = append(res, currP)
 		} else {
 			res = append(res, currP)
