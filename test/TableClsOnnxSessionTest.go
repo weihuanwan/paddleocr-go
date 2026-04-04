@@ -23,7 +23,7 @@ func main() {
 	defer options.Destroy()
 	// CLS
 	layoutDetSessionInternal, err := ort.NewDynamicAdvancedSession(
-		"C:\\Users\\Administrator\\.paddlex\\official_models\\PP-LCNet_x1_0_table_cls\\inference.onnx",
+		"test/model/table_cls.onnx",
 		[]string{"x"},
 		[]string{"fetch_name_0"},
 		options,
@@ -32,17 +32,17 @@ func main() {
 		panic(err)
 	}
 
-	docLayoutSession := table.NewTableClsOnnxSession(layoutDetSessionInternal)
+	tableClsSession := table.NewTableClsOnnxSession(layoutDetSessionInternal)
 
-	imagePath := "test/images/table_recognition1.jpg"
-	//imagePath := "test/images/table_recognition2.jpg"
+	//imagePath := "test/images/table_recognition1.jpg"
+	imagePath := "test/images/table_recognition2.jpg"
 
 	imageMat := gocv.IMRead(imagePath, gocv.IMReadColor)
-	layoutDetResults, err := docLayoutSession.Run(&imageMat)
+	tableClsResult, err := tableClsSession.Run(&imageMat)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(layoutDetResults)
+	fmt.Println(tableClsResult)
 
 }

@@ -122,7 +122,7 @@ func (tableCls *TableClsOnnxSession) resize(imageMat *gocv.Mat) (*gocv.Mat, erro
 	err := gocv.CvtColor(*imageMat, &rgb, gocv.ColorBGRToRGB)
 
 	if err != nil {
-		return nil, fmt.Errorf("colorBGRToRGB  failed: %w", err)
+		return nil, fmt.Errorf("TableClsOnnxSession  resize  color BGR To RGB  failed: %w", err)
 	}
 
 	// 2.
@@ -138,7 +138,7 @@ func (tableCls *TableClsOnnxSession) resize(imageMat *gocv.Mat) (*gocv.Mat, erro
 	err = gocv.Resize(*imageMat, &resizeMat, image.Pt(resizeW, resizeH), 0, 0, gocv.InterpolationLinear)
 
 	if err != nil {
-		return nil, fmt.Errorf("tableCls resize failed: %v", err)
+		return nil, fmt.Errorf("TableClsOnnxSession  resize failed: %v", err)
 	}
 
 	return &resizeMat, nil
