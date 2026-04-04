@@ -15,9 +15,9 @@ import (
  */
 type TableClsOnnxSession struct {
 	OnnxSession     *ort.DynamicAdvancedSession
-	Labels          []string // 标签字典
+	Labels          []string // 标签字典 有线表格、无线表格
 	targetShortEdge int
-	CropSize        [2]int //  (可选) 识方向模型裁剪大小 默认{224, 224}
+	CropSize        [2]int //  识方向模型裁剪大小 默认{224, 224}
 	Alpha           [3]float32
 	Beta            [3]float32
 }
