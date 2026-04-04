@@ -14,7 +14,7 @@ type ClsOnnxSession struct {
 	OnnxSession *ort.DynamicAdvancedSession
 
 	Labels   [4]int // 标签字典
-	CropSize [2]int
+	CropSize [2]int // 截图大小（默认，224，224）
 	Alpha    [3]float32
 	Beta     [3]float32
 }
@@ -73,7 +73,7 @@ func (cls *ClsOnnxSession) Run(image *gocv.Mat) (*ClsResult, error) {
 	clsInputTensor, err := ort.NewTensor(shape, imageCHW)
 	if err != nil {
 
-		return nil, fmt.Errorf("create rec input tensor error", err.Error())
+		return nil, fmt.Errorf("ClsOnnxSession create  input tensor error", err.Error())
 	}
 	defer clsInputTensor.Destroy()
 
@@ -81,14 +81,14 @@ func (cls *ClsOnnxSession) Run(image *gocv.Mat) (*ClsResult, error) {
 	clsOutputTensor, err := ort.NewEmptyTensor[float32](clsOutputShape)
 
 	if err != nil {
-		return nil, fmt.Errorf("create det output tensor error", err.Error())
+		return nil, fmt.Errorf("ClsOnnxSession create  output tensor error", err.Error())
 	}
 	defer clsOutputTensor.Destroy()
 	// 检测（核心）
 	err = cls.OnnxSession.Run([]ort.Value{clsInputTensor}, []ort.Value{clsOutputTensor})
 
 	if err != nil {
-		return nil, fmt.Errorf("run cls OnnxSession error ", err)
+		return nil, fmt.Errorf("ClsOnnxSession run  error ", err)
 	}
 
 	// 解析输出
@@ -119,7 +119,7 @@ func (cls *ClsOnnxSession) resize(originImage *gocv.Mat) (*gocv.Mat, error) {
 	err := gocv.CvtColor(*originImage, &rgbOriginImage, gocv.ColorBGRToRGB)
 
 	if err != nil {
-		return nil, fmt.Errorf("cls Color BGR To RGB Error %w", err)
+		return nil, fmt.Errorf("ClsOnnxSession Color BGR To RGB Error %w", err)
 	}
 
 	h := originImage.Rows()
