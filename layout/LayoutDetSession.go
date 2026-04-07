@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"math"
@@ -648,7 +649,7 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 		quad := convertPolygonToQuad(polygon)
 
 		if quad != nil && len(quad) > 0 {
-			iouQuad := CalculatePolygonOverlapRatio(
+			iouQuad, _ := CalculatePolygonOverlapRatio(
 				rect,
 				quad,
 				"union",
@@ -657,7 +658,7 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 				quad = rect
 			}
 
-			iouQuad = CalculatePolygonOverlapRatio(
+			iouQuad, _ = CalculatePolygonOverlapRatio(
 				polygon, quad, "union",
 			)
 		}
@@ -670,130 +671,80 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 	return rect
 }
 
-// ------------------- 工具函数 -------------------
-
-func toPath64(points []image.Point) clipper.Path64 {
-	path := make(clipper.Path64, len(points))
-	for i, p := range points {
-		path[i] = clipper.Point64{
-			X: int64(float64(p.X)),
-			Y: int64(float64(p.Y)),
-		}
-	}
-	return path
-}
-
-func toPaths64(points []image.Point) clipper.Paths64 {
-	return clipper.Paths64{toPath64(points)}
-}
-
-func area(paths clipper.Paths64) float64 {
-	var total float64
-
-	for _, p := range paths {
-
-		total += clipper.Area64(p)
-	}
-	return total
-}
-
-// bbox 快速过滤（性能关键）
-func bbox(points []image.Point) (minX, minY, maxX, maxY int) {
-	minX, minY = points[0].X, points[0].Y
-	maxX, maxY = minX, minY
-	for _, p := range points {
-		if p.X < minX {
-			minX = p.X
-		}
-		if p.Y < minY {
-			minY = p.Y
-		}
-		if p.X > maxX {
-			maxX = p.X
-		}
-		if p.Y > maxY {
-			maxY = p.Y
-		}
-	}
-	return
-}
-
-func bboxOverlap(p1, p2 []image.Point) bool {
-	minX1, minY1, maxX1, maxY1 := bbox(p1)
-	minX2, minY2, maxX2, maxY2 := bbox(p2)
-
-	return !(maxX1 < minX2 || maxX2 < minX1 ||
-		maxY1 < minY2 || maxY2 < minY1)
-}
-
-// ------------------- 核心函数 -------------------
-
 func CalculatePolygonOverlapRatio(
-	polygon1 []image.Point,
-	polygon2 []image.Point,
+	polygon1, polygon2 []image.Point,
 	mode string,
-) float64 {
-
-	// 1️⃣ 快速过滤（极大提升性能）
-	if !bboxOverlap(polygon1, polygon2) {
-		return 0
+) (float64, error) {
+	// 参数校验
+	if len(polygon1) < 3 || len(polygon2) < 3 {
+		return 0, errors.New("polygon must have at least 3 points")
 	}
 
-	// 2️⃣ 转换
-	subj := toPaths64(polygon1)
-	clip := toPaths64(polygon2)
+	// 辅助函数：将 []image.Point 转换为 clipper.Path64
+	toPath64 := func(poly []image.Point) clipper.Path64 {
+		path := make(clipper.Path64, len(poly))
+		for i, p := range poly {
+			// image.Point 的 X/Y 本身就是 int，直接转 int64
+			path[i] = clipper.Point64{X: int64(p.X), Y: int64(p.Y)}
+		}
+		return path
+	}
 
+	// 转换为 Paths64 格式（clipper 接口要求）
+	subject := clipper.Paths64{toPath64(polygon1)}
+	clipPath := clipper.Paths64{toPath64(polygon2)}
+
+	// 使用 NonZero 填充规则（与 shapely 默认行为一致）
 	fillRule := clipper.NonZero
 
-	// 3️⃣ 交集
-	interPaths, err := clipper.Intersect64(subj, clip, fillRule)
+	fmt.Println(polygon1)
+	fmt.Println(polygon2)
+	// 计算交集
+	intersection, err := clipper.Intersect64(subject, clipPath, fillRule)
 	if err != nil {
-		panic(err)
+		return 0, fmt.Errorf("intersection failed: %w", err)
 	}
-	if len(interPaths) == 0 {
-		return 0
-	}
-	interArea := area(interPaths)
+	fmt.Println(intersection)
 
-	// 4️⃣ 并集
-	unionPaths, err := clipper.Union64(subj, clip, fillRule)
+	intersectionArea := math.Abs(clipper.Area64(intersection[0]))
+
+	// 计算并集
+	union, err := clipper.Union64(subject, clipPath, fillRule)
 	if err != nil {
-		panic(err)
+		return 0, fmt.Errorf("union failed: %w", err)
 	}
-	unionArea := area(unionPaths)
+	unionArea := math.Abs(clipper.Area64(union[0]))
 
-	// 5️⃣ 原始面积
-	area1 := area(subj)
-	area2 := area(clip)
+	// 计算单个多边形面积（用于 small/large 模式）
+	area1 := math.Abs(clipper.Area64(toPath64(polygon1)))
+	area2 := math.Abs(clipper.Area64(toPath64(polygon2)))
 
-	// 6️⃣ 模式
+	// 根据 mode 计算比例
 	switch mode {
-
 	case "union":
 		if unionArea == 0 {
-			return 0
+			return 0, nil
 		}
-		return interArea / unionArea
+		return intersectionArea / unionArea, nil
 
 	case "small":
-		minArea := math.Min(area1, area2)
-		if minArea == 0 {
-			return 0
+		smallArea := math.Min(area1, area2)
+		if smallArea == 0 {
+			return 0, nil
 		}
-		return interArea / minArea
+		return intersectionArea / smallArea, nil
 
 	case "large":
-		maxArea := math.Max(area1, area2)
-		if maxArea == 0 {
-			return 0
+		largeArea := math.Max(area1, area2)
+		if largeArea == 0 {
+			return 0, nil
 		}
-		return interArea / maxArea
+		return intersectionArea / largeArea, nil
 
 	default:
-		panic("unknown mode")
+		return 0, fmt.Errorf("unknown mode: %s (supported: union, small, large)", mode)
 	}
 }
-
 func mask2polygon(mask gocv.Mat, maxAllowedDist int) []image.Point {
 	epsilonRatio := 0.004
 	// 获取位置
