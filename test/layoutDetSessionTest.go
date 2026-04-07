@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"log"
 
 	"github.com/weihuanwan/paddleocr-go/layout"
@@ -35,7 +36,7 @@ func main() {
 
 	docLayoutSession := layout.NewLayoutDetSession(layoutDetSessionInternal)
 
-	imagePath := "D:\\workspaces\\paddleocr-go\\huqi.png"
+	imagePath := "test/images/layout.png"
 
 	imageMat := gocv.IMRead(imagePath, gocv.IMReadColor)
 	layoutDetResults, err := docLayoutSession.Run(&imageMat)
@@ -87,17 +88,62 @@ func main() {
 	for i := 0; i < len(layoutDetResults); i++ {
 
 		layoutDet := layoutDetResults[i]
-		point := layoutDet.Point
+		//point := layoutDet.Point
+		//
+		//rect := image.Rect(point[0], point[1], point[2], point[3])
+		//
+		//cropImage := imageMat.Region(rect)
 
-		rect := image.Rect(point[0], point[1], point[2], point[3])
-
-		cropImage := imageMat.Region(rect)
+		cropImage := cropByBoxes(layoutDet, imageMat)
 		name := fmt.Sprintf("%dlayout_result.jpg", i)
 
 		gocv.IMWrite(name, cropImage)
 
-		fmt.Println(layoutDet.Label)
-
 	}
 
+}
+
+func cropByBoxes(layoutDet *layout.LayoutDetResult, imageMat gocv.Mat) gocv.Mat {
+	point := layoutDet.Point
+
+	rect := image.Rect(point[0], point[1], point[2], point[3])
+	region := imageMat.Region(rect)
+	cropImage := region.Clone() // 一定要 Clone！
+
+	// 如果没有多边形，直接返回
+	if layoutDet.PolygonPoints == nil || len(layoutDet.PolygonPoints) == 0 {
+		return cropImage
+	}
+
+	// 1️⃣ 创建 mask（单通道）
+	mask := gocv.NewMatWithSize(cropImage.Rows(), cropImage.Cols(), gocv.MatTypeCV8U)
+
+	// 2️⃣ 构建 polygon（注意要减去 xmin, ymin）
+	var pts []image.Point
+	xmin := point[0]
+	ymin := point[1]
+
+	for _, p := range layoutDet.PolygonPoints {
+		x := p.X - xmin
+		y := p.Y - ymin
+		pts = append(pts, image.Pt(x, y))
+	}
+
+	// 3️⃣ 填充多边形（mask=255 表示保留）
+	pointsVector := gocv.NewPointsVectorFromPoints([][]image.Point{pts})
+	gocv.FillPoly(&mask, pointsVector, color.RGBA{255, 255, 255, 0})
+
+	// 4️⃣ 生成白色背景
+	white := gocv.NewMatWithSizeFromScalar(
+		gocv.NewScalar(255, 255, 255, 0),
+		cropImage.Rows(),
+		cropImage.Cols(),
+		cropImage.Type(),
+	)
+
+	// 5️⃣ 用 mask 拷贝有效区域
+	result := white.Clone()
+	cropImage.CopyToWithMask(&result, mask)
+
+	return result
 }

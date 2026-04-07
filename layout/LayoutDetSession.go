@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 
+	clipper "github.com/cwbudde/go-clipper2/port"
 	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
@@ -542,9 +543,10 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 
 func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW float32, layoutShapeMode string) []image.Point {
 
+	// 默认是200
 	hm := 200
 	wm := 200
-
+	// 原图片坐标系
 	minX := box.Point[0]
 	minY := box.Point[1]
 	maxX := box.Point[2]
@@ -564,39 +566,42 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 		return rect
 	}
 
-	// 在检测时候是缩图的格式，现在把坐标转换原来的坐标
+	// 原图坐标 → mask坐标 (坐标系转换（大图 → 小图）)
 	minW := int(math.Min(math.Max(0, math.Round(float64(minX)*float64(scaleW))), float64(wm)))
-	maxW := int(math.Min(math.Max(0, math.Round(float64(maxX)*float64(scaleW))), float64(wm))) //183
+	maxW := int(math.Min(math.Max(0, math.Round(float64(maxX)*float64(scaleW))), float64(wm)))
 
-	minH := int(math.Min(math.Max(0, math.Round(float64(minY)*float64(scaleH))), float64(hm))) //108
-	maxH := int(math.Min(math.Max(0, math.Round(float64(maxY)*float64(scaleH))), float64(hm))) //176
+	minH := int(math.Min(math.Max(0, math.Round(float64(minY)*float64(scaleH))), float64(hm)))
+	maxH := int(math.Min(math.Max(0, math.Round(float64(maxY)*float64(scaleH))), float64(hm)))
 
 	mask := box.Mask
 	rows := maxH - minH + 1
 	cols := (wm + maxW) - (wm + minW)
 	mat := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
+
 	defer mat.Close()
 	var count = int32(0)
-
+	// 把模型输出的掩码处理
 	for row := minH; row <= maxH; row++ {
 		maskStart := row*wm + minW
 		maskEnd := row*wm + maxW
-		// 找到
+		// 找到这个位置的数据
 		m := mask[maskStart:maskEnd]
 		for w := 0; w < len(m); w++ {
 			h := row - minH
+			// 设置改坐标
 			mat.SetUCharAt(h, w, uint8(m[w]))
 			count += m[w]
 		}
 	}
-	// 如果都是0
+	/**
+	如果模型输出的掩码都是0证明当前块图不需要进行处理了
+	*/
 	if count == 0 {
 		return rect
 	}
 	resizedMask := gocv.NewMat()
 	defer resizedMask.Close()
 	err := gocv.Resize(mat, &resizedMask, image.Pt(boxW, boxH), 0, 0, gocv.InterpolationNearestNeighbor)
-
 	if err != nil {
 		panic("failed to resize image")
 	}
@@ -617,6 +622,7 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 		return rect
 	}
 
+	// 在检测时候是缩图的格式，现在把坐标转换原来的坐标
 	if len(polygon) > 0 {
 		for j := 0; j < len(polygon); j++ {
 			poly := polygon[j]
@@ -634,16 +640,15 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 		quad := convertPolygonToQuad(polygon)
 		if quad != nil && len(quad) > 0 {
 			return quad
-		} else {
-			return rect
 		}
-
+		return rect
 	} else if layoutShapeMode == "auto" {
+
 		// 多边形转换 四边形
 		quad := convertPolygonToQuad(polygon)
 
-		if len(quad) > 0 {
-			iouQuad := calculatePolygonOverlapRatio(
+		if quad != nil && len(quad) > 0 {
+			iouQuad := CalculatePolygonOverlapRatio(
 				rect,
 				quad,
 				"union",
@@ -652,11 +657,11 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 				quad = rect
 			}
 
-			iouQuad = calculatePolygonOverlapRatio(
+			iouQuad = CalculatePolygonOverlapRatio(
 				polygon, quad, "union",
 			)
-
 		}
+
 		return polygon
 	} else {
 
@@ -665,9 +670,128 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 	return rect
 }
 
-func calculatePolygonOverlapRatio(rect []image.Point, quad []image.Point, mode string) float64 {
+// ------------------- 工具函数 -------------------
 
-	return 0
+func toPath64(points []image.Point) clipper.Path64 {
+	path := make(clipper.Path64, len(points))
+	for i, p := range points {
+		path[i] = clipper.Point64{
+			X: int64(float64(p.X)),
+			Y: int64(float64(p.Y)),
+		}
+	}
+	return path
+}
+
+func toPaths64(points []image.Point) clipper.Paths64 {
+	return clipper.Paths64{toPath64(points)}
+}
+
+func area(paths clipper.Paths64) float64 {
+	var total float64
+
+	for _, p := range paths {
+
+		total += clipper.Area64(p)
+	}
+	return total
+}
+
+// bbox 快速过滤（性能关键）
+func bbox(points []image.Point) (minX, minY, maxX, maxY int) {
+	minX, minY = points[0].X, points[0].Y
+	maxX, maxY = minX, minY
+	for _, p := range points {
+		if p.X < minX {
+			minX = p.X
+		}
+		if p.Y < minY {
+			minY = p.Y
+		}
+		if p.X > maxX {
+			maxX = p.X
+		}
+		if p.Y > maxY {
+			maxY = p.Y
+		}
+	}
+	return
+}
+
+func bboxOverlap(p1, p2 []image.Point) bool {
+	minX1, minY1, maxX1, maxY1 := bbox(p1)
+	minX2, minY2, maxX2, maxY2 := bbox(p2)
+
+	return !(maxX1 < minX2 || maxX2 < minX1 ||
+		maxY1 < minY2 || maxY2 < minY1)
+}
+
+// ------------------- 核心函数 -------------------
+
+func CalculatePolygonOverlapRatio(
+	polygon1 []image.Point,
+	polygon2 []image.Point,
+	mode string,
+) float64 {
+
+	// 1️⃣ 快速过滤（极大提升性能）
+	if !bboxOverlap(polygon1, polygon2) {
+		return 0
+	}
+
+	// 2️⃣ 转换
+	subj := toPaths64(polygon1)
+	clip := toPaths64(polygon2)
+
+	fillRule := clipper.NonZero
+
+	// 3️⃣ 交集
+	interPaths, err := clipper.Intersect64(subj, clip, fillRule)
+	if err != nil {
+		panic(err)
+	}
+	if len(interPaths) == 0 {
+		return 0
+	}
+	interArea := area(interPaths)
+
+	// 4️⃣ 并集
+	unionPaths, err := clipper.Union64(subj, clip, fillRule)
+	if err != nil {
+		panic(err)
+	}
+	unionArea := area(unionPaths)
+
+	// 5️⃣ 原始面积
+	area1 := area(subj)
+	area2 := area(clip)
+
+	// 6️⃣ 模式
+	switch mode {
+
+	case "union":
+		if unionArea == 0 {
+			return 0
+		}
+		return interArea / unionArea
+
+	case "small":
+		minArea := math.Min(area1, area2)
+		if minArea == 0 {
+			return 0
+		}
+		return interArea / minArea
+
+	case "large":
+		maxArea := math.Max(area1, area2)
+		if maxArea == 0 {
+			return 0
+		}
+		return interArea / maxArea
+
+	default:
+		panic("unknown mode")
+	}
 }
 
 func mask2polygon(mask gocv.Mat, maxAllowedDist int) []image.Point {
@@ -1054,6 +1178,8 @@ func convertPolygonToQuad(polygon []image.Point) []image.Point {
 
 	// 读取浮点坐标
 	floatPts := make([]gocv.Point2f, 4)
+	//  按角度排序（逆时针/顺时针），然后调整起点为左上角
+	var cx, cy float64
 	for i := 0; i < 4; i++ {
 		// 获取第 i 行，每行两个 float32
 		x := ptsMat.GetFloatAt(i, 0)
@@ -1063,18 +1189,11 @@ func convertPolygonToQuad(polygon []image.Point) []image.Point {
 			X: x,
 			Y: y,
 		}
-	}
-
-	//  按角度排序（逆时针/顺时针），然后调整起点为左上角
-	// 计算中心点
-	var cx, cy float64
-	for _, p := range floatPts {
-		cx += float64(p.X)
-		cy += float64(p.Y)
+		cx += float64(x)
+		cy += float64(y)
 	}
 	cx /= 4
 	cy /= 4
-
 	// 按角度排序（和 Python 一样）
 	sort.Slice(floatPts, func(i, j int) bool {
 		angleI := math.Atan2(float64(floatPts[i].Y)-cy, float64(floatPts[i].X)-cx)
