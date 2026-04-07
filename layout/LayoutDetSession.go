@@ -299,9 +299,7 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 		return keepMaskBoxes[i].Order < keepMaskBoxes[j].Order
 	})
 	/**
-	TODO 代开发完善
 	处理像素掩码得到一个多边形点位置（重点核心地方）
-
 	*/
 	polygonPoints := extractPolygonPointsByMasks(keepMaskBoxes, scale, "auto")
 
@@ -675,12 +673,25 @@ func calculatePolygonOverlapRatio(rect []image.Point, quad []image.Point, mode s
 func mask2polygon(mask gocv.Mat, maxAllowedDist int) []image.Point {
 	epsilonRatio := 0.004
 	// 获取位置
-	pv := gocv.FindContours(mask, gocv.RetrievalExternal, gocv.ChainApproxSimple)
-	cnt := pv.At(0)
+	contours := gocv.FindContours(mask, gocv.RetrievalExternal, gocv.ChainApproxSimple)
+	// 1. 找最大轮廓（关键！！！）
+	var maxCnt gocv.PointVector
+	maxArea := 0.0
 
-	epsilon := epsilonRatio * gocv.ArcLength(cnt, true)
+	for i := 0; i < contours.Size(); i++ {
+		cnt := contours.At(i)
+		area := gocv.ContourArea(cnt)
 
-	approxCnt := gocv.ApproxPolyDP(cnt, epsilon, true)
+		if area > maxArea {
+			maxArea = area
+			maxCnt = cnt
+		}
+	}
+	// 2. epsilon
+	epsilon := epsilonRatio * gocv.ArcLength(maxCnt, true)
+	//  3. 多边形拟合
+	approxCnt := gocv.ApproxPolyDP(maxCnt, epsilon, true)
+
 	points := approxCnt.ToPoints()
 	// 提取 多点边界框 顶点
 	return extractCustomVertices(points, maxAllowedDist)
