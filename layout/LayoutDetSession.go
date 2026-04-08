@@ -568,26 +568,28 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 	}
 
 	// 原图坐标 → mask坐标 (坐标系转换（大图 → 小图）)
-	minW := int(math.Min(math.Max(0, math.Round(float64(minX)*float64(scaleW))), float64(wm)))
-	maxW := int(math.Min(math.Max(0, math.Round(float64(maxX)*float64(scaleW))), float64(wm)))
+	minW := int(math.Min(math.Max(0, float64(common.Round06(float64(minX)*float64(scaleW)))), float64(wm)))
+	maxW := int(math.Min(math.Max(0, float64(common.Round06(float64(maxX)*float64(scaleW)))), float64(wm)))
 
-	minH := int(math.Min(math.Max(0, math.Round(float64(minY)*float64(scaleH))), float64(hm)))
-	maxH := int(math.Min(math.Max(0, math.Round(float64(maxY)*float64(scaleH))), float64(hm)))
+	minH := int(math.Min(math.Max(0, float64(common.Round06(float64(minY)*float64(scaleH)))), float64(hm)))
+	maxH := int(math.Min(math.Max(0, float64(common.Round06(float64(maxY)*float64(scaleH)))), float64(hm)))
 
 	mask := box.Mask
-	rows := maxH - minH + 1
+	rows := maxH - minH
 	cols := (wm + maxW) - (wm + minW)
 	mat := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
 
 	defer mat.Close()
 	var count = int32(0)
+
 	// 把模型输出的掩码处理
-	for row := minH; row <= maxH; row++ {
+	for row := minH; row < maxH; row++ {
 		maskStart := row*wm + minW
 		maskEnd := row*wm + maxW
 		// 找到这个位置的数据
 		m := mask[maskStart:maskEnd]
-		fmt.Println("%w ", m)
+		//fmt.Printf("%v", m)
+		//fmt.Println()
 		for w := 0; w < len(m); w++ {
 			h := row - minH
 			// 设置改坐标
@@ -595,6 +597,14 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 			count += m[w]
 		}
 	}
+	//// 按 200 行，每行 200 个元素打印
+	//for i := 0; i < 200; i++ {
+	//	for j := 0; j < 200; j++ {
+	//		idx := i*200 + j
+	//		fmt.Printf("%v ", mask[idx]) // 元素之间用空格分隔
+	//	}
+	//	fmt.Println() // 每打印完一行换行
+	//}
 	/**
 	如果模型输出的掩码都是0证明当前块图不需要进行处理了
 	*/
@@ -655,13 +665,15 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 				quad,
 				"union",
 			)
+
+			fmt.Println(iouQuad)
 			if iouQuad >= 0.95 {
 				quad = rect
 			}
 
-			iouQuad, _ = CalculatePolygonOverlapRatio(
-				polygon, quad, "union",
-			)
+			//iouQuad, _ = CalculatePolygonOverlapRatio(
+			//	polygon, quad, "union",
+			//)
 		}
 
 		return polygon
