@@ -660,20 +660,23 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 		quad := convertPolygonToQuad(polygon)
 
 		if quad != nil && len(quad) > 0 {
+			//fmt.Println(rect)
+			//fmt.Println(quad)
 			iouQuad, _ := CalculatePolygonOverlapRatio(
 				rect,
 				quad,
 				"union",
 			)
 
-			fmt.Println(iouQuad)
 			if iouQuad >= 0.95 {
 				quad = rect
 			}
 
-			//iouQuad, _ = CalculatePolygonOverlapRatio(
-			//	polygon, quad, "union",
-			//)
+			iouQuad, _ = CalculatePolygonOverlapRatio(
+				polygon, quad, "union",
+			)
+
+			fmt.Println(iouQuad)
 		}
 
 		return polygon
@@ -757,11 +760,8 @@ func pointsToPaths64(points []image.Point) clipper.Paths64 {
 
 // paths64TotalArea 计算 Paths64 的总面积（遍历所有多边形求和）
 func paths64TotalArea(paths clipper.Paths64) float64 {
-	total := 0.0
-	for _, path := range paths {
-		total += clipper.Area64(path)
-	}
-	return total
+	return clipper.Area64(paths[0])
+
 }
 func mask2polygon(mask gocv.Mat, maxAllowedDist int) []image.Point {
 	epsilonRatio := 0.004

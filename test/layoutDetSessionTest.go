@@ -36,7 +36,7 @@ func main() {
 
 	docLayoutSession := layout.NewLayoutDetSession(layoutDetSessionInternal)
 
-	imagePath := "test/images/layout.png"
+	imagePath := "test/images/huaqi.png"
 
 	imageMat := gocv.IMRead(imagePath, gocv.IMReadColor)
 	layoutDetResults, err := docLayoutSession.Run(&imageMat)
