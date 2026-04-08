@@ -1,12 +1,14 @@
 package layout
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"math"
 	"slices"
 	"sort"
 
+	clipper "github.com/cwbudde/go-clipper2/port"
 	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
@@ -299,18 +301,16 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 		return keepMaskBoxes[i].Order < keepMaskBoxes[j].Order
 	})
 	/**
-	TODO 代开发完善
 	处理像素掩码得到一个多边形点位置（重点核心地方）
-
 	*/
-	//polygonPoints := extractPolygonPointsByMasks(keepMaskBoxes, scale, "auto")
+	polygonPoints := extractPolygonPointsByMasks(keepMaskBoxes, scale, "auto")
 
 	layoutUnclipRatio := []float64{1.0, 1.0}
 	unclipResult := unclipBoxes(keepMaskBoxes, layoutUnclipRatio)
 
 	layoutDetResults := restructuredBoxes(
 		unclipResult,
-		nil,
+		polygonPoints,
 		originImageH,
 		originImageW,
 	)
@@ -519,8 +519,7 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 
 	scaleH := scale[0] / 4
 	scaleW := scale[1] / 4
-	hm := 200
-	wm := 200
+
 	// 找到最大的宽度
 	maxBoxW := 0
 	for i := 0; i < len(layoutDetBox); i++ {
@@ -530,142 +529,247 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 			maxBoxW = maxW
 		}
 	}
-
 	polygonPoints := make([][]image.Point, 0)
 
 	for i := 0; i < len(layoutDetBox); i++ {
+
 		box := layoutDetBox[i]
-		minX := box.Point[0]
-		minY := box.Point[1]
-		maxX := box.Point[2]
-		maxY := box.Point[3]
 
-		boxW, boxH := maxX-minX, maxY-minY
+		rect := polygonPointsByMasks(box, maxBoxW, scaleH, scaleW, layoutShapeMode)
 
-		// 默认矩形（四个顶点，顺序：左上、右上、右下、左下）
-		rect := []image.Point{
-			{minX, minY},
-			{maxX, minY},
-			{maxX, maxY},
-			{minX, maxY},
-		}
+		polygonPoints = append(polygonPoints, rect)
+	}
+	return polygonPoints
+}
 
-		if boxW <= 0 || boxH <= 0 {
-			polygonPoints = append(polygonPoints, rect)
-			continue
-		}
+func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW float32, layoutShapeMode string) []image.Point {
 
-		minW := int(math.Min(math.Max(0, math.Round(float64(minX)*float64(scaleW))), float64(wm)))
-		maxW := int(math.Min(math.Max(0, math.Round(float64(maxX)*float64(scaleW))), float64(wm))) //183
+	// 默认是200
+	hm := 200
+	wm := 200
+	// 原图片坐标系
+	minX := box.Point[0]
+	minY := box.Point[1]
+	maxX := box.Point[2]
+	maxY := box.Point[3]
 
-		minH := int(math.Min(math.Max(0, math.Round(float64(minY)*float64(scaleH))), float64(hm))) //108
-		maxH := int(math.Min(math.Max(0, math.Round(float64(maxY)*float64(scaleH))), float64(hm))) //176
+	boxW, boxH := maxX-minX, maxY-minY
 
-		mask := box.Mask
-		rows := maxH - minH + 1
-		cols := (wm + maxW) - (wm + minW)
-		mat := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
-		var count = int32(0)
-		for row := minH; row <= maxH; row++ {
-			maskStart := row*wm + minW
-			maskEnd := row*wm + maxW
-			// 找到
-			m := mask[maskStart:maskEnd]
-			for w := 0; w < len(m); w++ {
-				h := row - minH
-				mat.SetUCharAt(h, w, uint8(m[w]))
-				count += m[w]
-			}
-		}
-		if count == 0 {
-			polygonPoints = append(polygonPoints, rect)
-			mat.Close()
-			continue
-		}
-		resizedMask := gocv.NewMat()
-		err := gocv.Resize(mat, &resizedMask, image.Pt(boxW, boxH), 0, 0, gocv.InterpolationNearestNeighbor)
-
-		if err != nil {
-			panic(err)
-		}
-
-		maxAllowedDist := maxBoxW
-		if boxW > int(float32(maxBoxW)*0.6) {
-			maxAllowedDist = boxW
-		}
-		// 转换多点边界框
-		polygon := mask2polygon(resizedMask, maxAllowedDist)
-
-		if len(polygon) < 4 {
-			polygonPoints = append(polygonPoints, rect)
-			continue
-		}
-
-		if len(polygon) > 0 {
-			for j := 0; j < len(polygon); j++ {
-				poly := polygon[j]
-				poly.X = poly.X + minX
-				poly.Y = poly.Y + minY
-				polygon[j] = poly
-			}
-		}
-
-		if layoutShapeMode == "poly" {
-			// 返回完整多边形
-			polygonPoints = append(polygonPoints, polygon)
-		} else if layoutShapeMode == "quad" {
-			// 多边形转换 四边形
-			quad := convertPolygonToQuad(polygon)
-			if quad != nil && len(quad) > 0 {
-				polygonPoints = append(polygonPoints, quad)
-			} else {
-				polygonPoints = append(polygonPoints, rect)
-			}
-		} else if layoutShapeMode == "auto" {
-			// 多边形转换 四边形
-			quad := convertPolygonToQuad(polygon)
-
-			if len(quad) > 0 {
-				iouQuad := calculatePolygonOverlapRatio(
-					rect,
-					quad,
-					"union",
-				)
-				if iouQuad >= 0.95 {
-					quad = rect
-				}
-
-				iouQuad = calculatePolygonOverlapRatio(
-					polygon, quad, "union",
-				)
-
-			}
-			polygonPoints = append(polygonPoints, polygon)
-		} else {
-			panic("Unsupported layoutShapeMode")
-		}
-
+	// 默认矩形（四个顶点，顺序：左上、右上、右下、左下）
+	rect := []image.Point{
+		{minX, minY},
+		{maxX, minY},
+		{maxX, maxY},
+		{minX, maxY},
 	}
 
-	return nil
+	if boxW <= 0 || boxH <= 0 {
+		return rect
+	}
+
+	// 原图坐标 → mask坐标 (坐标系转换（大图 → 小图）)
+	minW := int(math.Min(math.Max(0, math.Round(float64(minX)*float64(scaleW))), float64(wm)))
+	maxW := int(math.Min(math.Max(0, math.Round(float64(maxX)*float64(scaleW))), float64(wm)))
+
+	minH := int(math.Min(math.Max(0, math.Round(float64(minY)*float64(scaleH))), float64(hm)))
+	maxH := int(math.Min(math.Max(0, math.Round(float64(maxY)*float64(scaleH))), float64(hm)))
+
+	mask := box.Mask
+	rows := maxH - minH + 1
+	cols := (wm + maxW) - (wm + minW)
+	mat := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
+
+	defer mat.Close()
+	var count = int32(0)
+	// 把模型输出的掩码处理
+	for row := minH; row <= maxH; row++ {
+		maskStart := row*wm + minW
+		maskEnd := row*wm + maxW
+		// 找到这个位置的数据
+		m := mask[maskStart:maskEnd]
+		for w := 0; w < len(m); w++ {
+			h := row - minH
+			// 设置改坐标
+			mat.SetUCharAt(h, w, uint8(m[w]))
+			count += m[w]
+		}
+	}
+	/**
+	如果模型输出的掩码都是0证明当前块图不需要进行处理了
+	*/
+	if count == 0 {
+		return rect
+	}
+	resizedMask := gocv.NewMat()
+	defer resizedMask.Close()
+	err := gocv.Resize(mat, &resizedMask, image.Pt(boxW, boxH), 0, 0, gocv.InterpolationNearestNeighbor)
+	if err != nil {
+		panic("failed to resize image")
+	}
+
+	//resizedMaskW := gocv.NewWindow(`resizedMask`)
+	//resizedMaskW.ResizeWindow(boxW, boxH)
+	//resizedMaskW.IMShow(resizedMask)
+	//resizedMaskW.WaitKey(0)
+
+	maxAllowedDist := maxBoxW
+	if boxW > int(float32(maxBoxW)*0.6) {
+		maxAllowedDist = boxW
+	}
+	// 转换多点边界框（核心）
+	polygon := mask2polygon(resizedMask, maxAllowedDist)
+
+	if len(polygon) < 4 {
+		return rect
+	}
+
+	// 在检测时候是缩图的格式，现在把坐标转换原来的坐标
+	if len(polygon) > 0 {
+		for j := 0; j < len(polygon); j++ {
+			poly := polygon[j]
+			poly.X = poly.X + minX
+			poly.Y = poly.Y + minY
+			polygon[j] = poly
+		}
+	}
+
+	if layoutShapeMode == "poly" {
+		// 返回完整多边形
+		return polygon
+	} else if layoutShapeMode == "quad" {
+		// 多边形转换 四边形
+		quad := convertPolygonToQuad(polygon)
+		if quad != nil && len(quad) > 0 {
+			return quad
+		}
+		return rect
+	} else if layoutShapeMode == "auto" {
+
+		// 多边形转换 四边形
+		quad := convertPolygonToQuad(polygon)
+
+		if quad != nil && len(quad) > 0 {
+			iouQuad, _ := CalculatePolygonOverlapRatio(
+				rect,
+				quad,
+				"union",
+			)
+			if iouQuad >= 0.95 {
+				quad = rect
+			}
+
+			iouQuad, _ = CalculatePolygonOverlapRatio(
+				polygon, quad, "union",
+			)
+		}
+
+		return polygon
+	} else {
+
+		return rect
+	}
+	return rect
 }
 
-func calculatePolygonOverlapRatio(rect []image.Point, quad []image.Point, mode string) float64 {
+func CalculatePolygonOverlapRatio(
+	polygon1, polygon2 []image.Point,
+	mode string,
+) (float64, error) {
+	// 参数校验
+	if len(polygon1) < 3 || len(polygon2) < 3 {
+		return 0, errors.New("polygon must have at least 3 points")
+	}
 
-	return 0
+	// 辅助函数：将 []image.Point 转换为 clipper.Path64
+	toPath64 := func(poly []image.Point) clipper.Path64 {
+		path := make(clipper.Path64, len(poly))
+		for i, p := range poly {
+			// image.Point 的 X/Y 本身就是 int，直接转 int64
+			path[i] = clipper.Point64{X: int64(p.X), Y: int64(p.Y)}
+		}
+		return path
+	}
+
+	// 转换为 Paths64 格式（clipper 接口要求）
+	subject := clipper.Paths64{toPath64(polygon1)}
+	clipPath := clipper.Paths64{toPath64(polygon2)}
+
+	// 使用 NonZero 填充规则（与 shapely 默认行为一致）
+	fillRule := clipper.NonZero
+
+	fmt.Println(polygon1)
+	fmt.Println(polygon2)
+	// 计算交集
+	intersection, err := clipper.Intersect64(subject, clipPath, fillRule)
+	if err != nil {
+		return 0, fmt.Errorf("intersection failed: %w", err)
+	}
+	fmt.Println(intersection)
+
+	intersectionArea := math.Abs(clipper.Area64(intersection[0]))
+
+	// 计算并集
+	union, err := clipper.Union64(subject, clipPath, fillRule)
+	if err != nil {
+		return 0, fmt.Errorf("union failed: %w", err)
+	}
+	unionArea := math.Abs(clipper.Area64(union[0]))
+
+	// 计算单个多边形面积（用于 small/large 模式）
+	area1 := math.Abs(clipper.Area64(toPath64(polygon1)))
+	area2 := math.Abs(clipper.Area64(toPath64(polygon2)))
+
+	// 根据 mode 计算比例
+	switch mode {
+	case "union":
+		if unionArea == 0 {
+			return 0, nil
+		}
+		return intersectionArea / unionArea, nil
+
+	case "small":
+		smallArea := math.Min(area1, area2)
+		if smallArea == 0 {
+			return 0, nil
+		}
+		return intersectionArea / smallArea, nil
+
+	case "large":
+		largeArea := math.Max(area1, area2)
+		if largeArea == 0 {
+			return 0, nil
+		}
+		return intersectionArea / largeArea, nil
+
+	default:
+		return 0, fmt.Errorf("unknown mode: %s (supported: union, small, large)", mode)
+	}
 }
-
 func mask2polygon(mask gocv.Mat, maxAllowedDist int) []image.Point {
 	epsilonRatio := 0.004
 	// 获取位置
-	pv := gocv.FindContours(mask, gocv.RetrievalExternal, gocv.ChainApproxSimple)
-	cnt := pv.At(0)
+	contours := gocv.FindContours(mask, gocv.RetrievalExternal, gocv.ChainApproxSimple)
+	// 1. 找最大轮廓（关键！！！）
+	var maxCnt gocv.PointVector
+	maxArea := 0.0
 
-	epsilon := epsilonRatio * gocv.ArcLength(cnt, true)
-	approxCnt := gocv.ApproxPolyDP(cnt, epsilon, true)
+	for i := 0; i < contours.Size(); i++ {
+		cnt := contours.At(i)
+		area := gocv.ContourArea(cnt)
 
+		if area > maxArea {
+			maxArea = area
+			maxCnt = cnt
+		}
+	}
+	// 2. epsilon
+	epsilon := epsilonRatio * gocv.ArcLength(maxCnt, true)
+	//  3. 多边形拟合
+	approxCnt := gocv.ApproxPolyDP(maxCnt, epsilon, true)
+
+	points := approxCnt.ToPoints()
 	// 提取 多点边界框 顶点
-	return extractCustomVertices(approxCnt.ToPoints(), maxAllowedDist)
+	return extractCustomVertices(points, maxAllowedDist)
 
 }
 
@@ -791,33 +895,7 @@ func extractCustomVertices(points []image.Point, maxAllowedDist int) []image.Poi
 	}
 
 	/**
-		2. 筛选需要保留的凹点，如下表示:
-
-		*                 *
-
-	*								*
-
-		*
-							*
-	*
-
-			*             *
-
-
-	最后得到如下：
-
-			*                 *
-
-	*								*
-
-
-
-	*
-
-			*             *
-
-
-
+	2. 筛选需要保留的凹点
 	*/
 	preserveConcave := make([]int, 0)
 	concaveIndicesLen := len(concaveIndices)
@@ -859,10 +937,12 @@ func extractCustomVertices(points []image.Point, maxAllowedDist int) []image.Poi
 	// 3. 确定初步保留点索引
 	keptPoints := make([]int, 0)
 	for i, info := range pointInfos {
+		// 如果是凹点 ，并且角度是大于 120)才保留
 		if info.IsConvex || (slices.Contains(preserveConcave, i) && info.Angle >= 120) {
 			keptPoints = append(keptPoints, i)
 		}
 	}
+
 	// 4. 距离插值 (处理两点之间距离过大的情况)
 	finalIndices := make([]int, 0)
 	for i := 0; i < len(keptPoints); i++ {
@@ -919,15 +999,53 @@ func extractCustomVertices(points []image.Point, maxAllowedDist int) []image.Poi
 	sort.Ints(finalIndices)
 	res := make([]image.Point, 0, len(finalIndices))
 	for _, idx := range finalIndices {
+
+		// 处理凸点的
+		/**
+		移动前（尖刺状）              移动后（钝化）
+
+			   ╱╲                            ╱  ╲
+			  ╱  ╲                          ╱    ╲
+			 ╱    ╲                        ╱      ╲
+			╱      ╲                      ╱        ╲
+		   ●────────●                    ●──────────●
+
+		  顶点尖锐突出                    顶点外扩，折角变缓
+		*/
 		info := pointInfos[idx]
 		currP := points[idx]
-
 		if info.IsConvex && math.Abs(float64(info.Angle-float32(sharpAngleThresh))) < 1 {
-			res = append(res, currP)
-		} else {
-			res = append(res, currP)
+			v1NormResult := norm(info.v1)
+
+			v2NormResult := norm(info.v2)
+
+			v1Norm := []float64{
+				float64(info.v1.X) / v1NormResult,
+				float64(info.v1.Y) / v1NormResult,
+			}
+
+			V2Norm := []float64{
+				float64(info.v2.X) / v2NormResult,
+				float64(info.v2.Y) / v2NormResult,
+			}
+
+			dirVec := []float64{
+				v1Norm[0] + V2Norm[0],
+				v1Norm[1] + V2Norm[1],
+			}
+
+			newNorm := normFloat64(dirVec[0], dirVec[1])
+
+			d := (v1NormResult + v2NormResult) / 2
+			newDirVec := []float64{
+				(dirVec[0] / newNorm) * d,
+				(dirVec[1] / newNorm) * d,
+			}
+			currP.X = int(math.Round(float64(currP.X) + newDirVec[0]))
+			currP.Y = int(math.Round(float64(currP.Y) + newDirVec[1]))
 		}
 
+		res = append(res, currP)
 	}
 
 	return res
@@ -936,6 +1054,10 @@ func extractCustomVertices(points []image.Point, maxAllowedDist int) []image.Poi
 // 向量长度
 func norm(p image.Point) float64 {
 	return math.Sqrt(float64(p.X*p.X + p.Y*p.Y))
+}
+
+func normFloat64(x, y float64) float64 {
+	return math.Sqrt(x*x + y*y)
 }
 
 // 点积
@@ -963,6 +1085,8 @@ func angleBetweenVectors(v1, v2 image.Point) float64 {
 	}
 
 	angleRad := math.Acos(cosTheta)
+
+	// 计算角度
 	return angleRad * 180 / math.Pi
 }
 
@@ -1005,6 +1129,8 @@ func convertPolygonToQuad(polygon []image.Point) []image.Point {
 
 	// 读取浮点坐标
 	floatPts := make([]gocv.Point2f, 4)
+	//  按角度排序（逆时针/顺时针），然后调整起点为左上角
+	var cx, cy float64
 	for i := 0; i < 4; i++ {
 		// 获取第 i 行，每行两个 float32
 		x := ptsMat.GetFloatAt(i, 0)
@@ -1014,18 +1140,11 @@ func convertPolygonToQuad(polygon []image.Point) []image.Point {
 			X: x,
 			Y: y,
 		}
-	}
-
-	//  按角度排序（逆时针/顺时针），然后调整起点为左上角
-	// 计算中心点
-	var cx, cy float64
-	for _, p := range floatPts {
-		cx += float64(p.X)
-		cy += float64(p.Y)
+		cx += float64(x)
+		cy += float64(y)
 	}
 	cx /= 4
 	cy /= 4
-
 	// 按角度排序（和 Python 一样）
 	sort.Slice(floatPts, func(i, j int) bool {
 		angleI := math.Atan2(float64(floatPts[i].Y)-cy, float64(floatPts[i].X)-cx)
