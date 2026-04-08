@@ -587,6 +587,7 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 		maskEnd := row*wm + maxW
 		// 找到这个位置的数据
 		m := mask[maskStart:maskEnd]
+		fmt.Println("%w ", m)
 		for w := 0; w < len(m); w++ {
 			h := row - minH
 			// 设置改坐标
@@ -670,58 +671,45 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 	}
 	return rect
 }
-
 func CalculatePolygonOverlapRatio(
 	polygon1, polygon2 []image.Point,
 	mode string,
 ) (float64, error) {
-	// 参数校验
+	// 参数校验（与 Python 类似）
 	if len(polygon1) < 3 || len(polygon2) < 3 {
-		return 0, errors.New("polygon must have at least 3 points")
+		return 0, errors.New("polygons must have at least 3 points")
 	}
 
-	// 辅助函数：将 []image.Point 转换为 clipper.Path64
-	toPath64 := func(poly []image.Point) clipper.Path64 {
-		path := make(clipper.Path64, len(poly))
-		for i, p := range poly {
-			// image.Point 的 X/Y 本身就是 int，直接转 int64
-			path[i] = clipper.Point64{X: int64(p.X), Y: int64(p.Y)}
-		}
-		return path
-	}
+	// 转换为 clipper Paths64（相当于 Polygon()）
+	subject := pointsToPaths64(polygon1)
+	clip := pointsToPaths64(polygon2)
 
-	// 转换为 Paths64 格式（clipper 接口要求）
-	subject := clipper.Paths64{toPath64(polygon1)}
-	clipPath := clipper.Paths64{toPath64(polygon2)}
-
-	// 使用 NonZero 填充规则（与 shapely 默认行为一致）
+	// 使用 NonZero 填充规则（Shapely 默认行为）
 	fillRule := clipper.NonZero
 
-	fmt.Println(polygon1)
-	fmt.Println(polygon2)
-	// 计算交集
-	intersection, err := clipper.Intersect64(subject, clipPath, fillRule)
+	// 计算交集（相当于 poly1.intersection(poly2)）
+	intersection, err := clipper.Intersect64(subject, clip, fillRule)
 	if err != nil {
 		return 0, fmt.Errorf("intersection failed: %w", err)
 	}
-	fmt.Println(intersection)
+	// 交集面积（多个多边形求和，相当于 .area）
+	intersectionArea := paths64TotalArea(intersection) // 36464.0
 
-	intersectionArea := math.Abs(clipper.Area64(intersection[0]))
-
-	// 计算并集
-	union, err := clipper.Union64(subject, clipPath, fillRule)
+	// 计算并集（相当于 poly1.union(poly2)）
+	union, err := clipper.Union64(subject, clip, fillRule)
 	if err != nil {
 		return 0, fmt.Errorf("union failed: %w", err)
 	}
-	unionArea := math.Abs(clipper.Area64(union[0]))
+	// 并集面积（多个多边形求和，相当于 .area）
+	unionArea := paths64TotalArea(union) //36915.0
 
-	// 计算单个多边形面积（用于 small/large 模式）
-	area1 := math.Abs(clipper.Area64(toPath64(polygon1)))
-	area2 := math.Abs(clipper.Area64(toPath64(polygon2)))
+	// 原始多边形面积（用于 small/large 模式）
+	area1 := paths64TotalArea(subject)
+	area2 := paths64TotalArea(clip)
 
-	// 根据 mode 计算比例
+	// 根据 mode 计算比例（与 Python 完全一致）
 	switch mode {
-	case "union":
+	case "union", "":
 		if unionArea == 0 {
 			return 0, nil
 		}
@@ -742,8 +730,26 @@ func CalculatePolygonOverlapRatio(
 		return intersectionArea / largeArea, nil
 
 	default:
-		return 0, fmt.Errorf("unknown mode: %s (supported: union, small, large)", mode)
+		return 0, fmt.Errorf("unknown mode: %s", mode)
 	}
+}
+
+// pointsToPaths64 将 []image.Point 转换为 clipper.Paths64
+func pointsToPaths64(points []image.Point) clipper.Paths64 {
+	path := make(clipper.Path64, len(points))
+	for i, p := range points {
+		path[i] = clipper.Point64{X: int64(p.X), Y: int64(p.Y)}
+	}
+	return clipper.Paths64{path}
+}
+
+// paths64TotalArea 计算 Paths64 的总面积（遍历所有多边形求和）
+func paths64TotalArea(paths clipper.Paths64) float64 {
+	total := 0.0
+	for _, path := range paths {
+		total += clipper.Area64(path)
+	}
+	return total
 }
 func mask2polygon(mask gocv.Mat, maxAllowedDist int) []image.Point {
 	epsilonRatio := 0.004
@@ -768,7 +774,7 @@ func mask2polygon(mask gocv.Mat, maxAllowedDist int) []image.Point {
 	approxCnt := gocv.ApproxPolyDP(maxCnt, epsilon, true)
 
 	points := approxCnt.ToPoints()
-	// 提取 多点边界框 顶点
+	// 提取 多点边界框 顶点 [[  0   0], [  0  46], [475  46], [475   0]]
 	return extractCustomVertices(points, maxAllowedDist)
 
 }
@@ -1107,70 +1113,78 @@ func isConvex(prev image.Point, curr image.Point, next image.Point) bool {
 	return cross < 0
 }
 func convertPolygonToQuad(polygon []image.Point) []image.Point {
-
 	if len(polygon) < 3 {
 		return nil
 	}
 
 	pv := gocv.NewPointVectorFromPoints(polygon)
 	defer pv.Close()
+
 	minRect := gocv.MinAreaRect(pv)
+
 	ptsMat := gocv.NewMat()
 	defer ptsMat.Close()
-	err := gocv.BoxPoints(minRect, &ptsMat)
-	if err != nil {
-		panic(err)
+
+	if err := gocv.BoxPoints(minRect, &ptsMat); err != nil {
+		return nil
 	}
 
-	// 从 Mat 中提取四个点
 	if ptsMat.Rows() != 4 || ptsMat.Cols() != 2 {
 		return nil
 	}
 
-	// 读取浮点坐标
-	floatPts := make([]gocv.Point2f, 4)
-	//  按角度排序（逆时针/顺时针），然后调整起点为左上角
-	var cx, cy float64
+	// 读取4个点并计算中心
+	quad := make([][2]float64, 4)
+	var centerX, centerY float64
 	for i := 0; i < 4; i++ {
-		// 获取第 i 行，每行两个 float32
-		x := ptsMat.GetFloatAt(i, 0)
-		y := ptsMat.GetFloatAt(i, 1)
-		// 转换为整数坐标（四舍五入）
-		floatPts[i] = gocv.Point2f{
-			X: x,
-			Y: y,
-		}
-		cx += float64(x)
-		cy += float64(y)
+		quad[i][0] = float64(ptsMat.GetFloatAt(i, 0))
+		quad[i][1] = float64(ptsMat.GetFloatAt(i, 1))
+		centerX += quad[i][0]
+		centerY += quad[i][1]
 	}
-	cx /= 4
-	cy /= 4
-	// 按角度排序（和 Python 一样）
-	sort.Slice(floatPts, func(i, j int) bool {
-		angleI := math.Atan2(float64(floatPts[i].Y)-cy, float64(floatPts[i].X)-cx)
-		angleJ := math.Atan2(float64(floatPts[j].Y)-cy, float64(floatPts[j].X)-cx)
-		return angleI < angleJ
+	centerX /= 4
+	centerY /= 4
+
+	// 按角度排序（逆时针）
+	type pointInfo struct {
+		idx   int
+		angle float64
+		x, y  float64
+	}
+
+	pts := make([]pointInfo, 4)
+	for i := 0; i < 4; i++ {
+		pts[i] = pointInfo{
+			idx:   i,
+			angle: math.Atan2(quad[i][1]-centerY, quad[i][0]-centerX),
+			x:     quad[i][0],
+			y:     quad[i][1],
+		}
+	}
+
+	sort.Slice(pts, func(i, j int) bool {
+		return pts[i].angle < pts[j].angle
 	})
 
-	// 找左上角（x+y 最小）
+	// 找到左上角（x+y最小）
 	topLeftIdx := 0
-	minSum := floatPts[0].X + floatPts[0].Y
+	minSum := pts[0].x + pts[0].y
 	for i := 1; i < 4; i++ {
-		sum := floatPts[i].X + floatPts[i].Y
-		if sum < minSum {
+		if sum := pts[i].x + pts[i].y; sum < minSum {
 			minSum = sum
 			topLeftIdx = i
 		}
 	}
 
-	// 7. roll（np.roll 等价实现）
+	// 构建结果（从左上角开始顺时针）
 	result := make([]image.Point, 4)
 	for i := 0; i < 4; i++ {
-		p := floatPts[(topLeftIdx+i)%4]
+		src := pts[(topLeftIdx+i)%4]
 		result[i] = image.Point{
-			X: int(math.Round(float64(p.X))),
-			Y: int(math.Round(float64(p.Y))),
+			X: int(math.Round(src.x)),
+			Y: int(math.Round(src.y)),
 		}
 	}
+
 	return result
 }
