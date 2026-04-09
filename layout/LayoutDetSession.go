@@ -530,14 +530,11 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 		}
 	}
 	polygonPoints := make([][]image.Point, 0)
-
+	// 默认是200
+	hm := 200
+	wm := 200
 	for i := 0; i < len(layoutDetBox); i++ {
-
 		box := layoutDetBox[i]
-
-		// 默认是200
-		hm := 200
-		wm := 200
 		// 原图片坐标系
 		minX := box.Point[0]
 		minY := box.Point[1]
@@ -571,7 +568,6 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 		cols := (wm + maxW) - (wm + minW)
 		mat := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
 
-		defer mat.Close()
 		var count = int32(0)
 
 		// 把模型输出的掩码处理
@@ -581,8 +577,8 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 			maskEnd := row*wm + maxW
 			// 找到这个位置的数据
 			m := mask[maskStart:maskEnd]
-			fmt.Printf("%v", m)
-			fmt.Println()
+			//fmt.Printf("%v", m)
+			//fmt.Println()
 			for w := 0; w < len(m); w++ {
 				// 设置改坐标
 				mat.SetUCharAt(h, w, uint8(m[w]))
@@ -593,21 +589,23 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 			polygonPoints = append(polygonPoints, rect)
 			continue
 		}
-		// 按 200 行，每行 200 个元素打印
-		for i := 0; i < 200; i++ {
-			for j := 0; j < 200; j++ {
-				idx := i*200 + j
-				fmt.Printf("%v ", mask[idx]) // 元素之间用空格分隔
-			}
-			fmt.Println() // 每打印完一行换行
-		}
+		//// 按 200 行，每行 200 个元素打印
+		//for i := 0; i < 200; i++ {
+		//	for j := 0; j < 200; j++ {
+		//		idx := i*200 + j
+		//		fmt.Printf("%v ", mask[idx]) // 元素之间用空格分隔
+		//	}
+		//	fmt.Println() // 每打印完一行换行
+		//}
 		resizedMask := gocv.NewMat()
-		defer resizedMask.Close()
 		err := gocv.Resize(mat, &resizedMask, image.Pt(boxW, boxH), 0, 0, gocv.InterpolationNearestNeighbor)
+
 		if err != nil {
+			mat.Close()
+			resizedMask.Close()
 			panic("failed to resize image")
 		}
-
+		mat.Close()
 		//resizedMaskW := gocv.NewWindow(`resizedMask`)
 		//resizedMaskW.ResizeWindow(boxW, boxH)
 		//resizedMaskW.IMShow(resizedMask)
@@ -619,7 +617,7 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 		}
 		// 转换多点边界框（核心）
 		polygon := mask2polygon(resizedMask, maxAllowedDist)
-
+		resizedMask.Close()
 		if len(polygon) < 4 {
 			polygonPoints = append(polygonPoints, rect)
 			continue
@@ -652,22 +650,25 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 		} else if layoutShapeMode == "auto" {
 			iouThreshold := 0.8
 			// 多边形转换 四边形
-			quad := convertPolygonToQuad(polygon)
+			polygonToQuad := convertPolygonToQuad(polygon)
 
-			if quad != nil && len(quad) > 0 {
+			var quad = []image.Point{}
 
-				iouQuad, _ := CalculatePolygonOverlapRatio(
+			if polygonToQuad != nil && len(polygonToQuad) > 0 {
+
+				iouQuad1, _ := CalculatePolygonOverlapRatio(
 					rect,
-					quad,
+					polygonToQuad,
 					"union",
 				)
 
-				if iouQuad >= 0.95 {
+				if iouQuad1 >= 0.95 {
 					quad = rect
 				}
+
 				// 判断用四边形（quad）替代多边形（polygon），会不会“失真太多”。
-				iouQuad, _ = CalculatePolygonOverlapRatio(
-					polygon, quad, "union",
+				iouQuad2, _ := CalculatePolygonOverlapRatio(
+					polygonToQuad, quad, "union",
 				)
 
 				var prePoly []image.Point
@@ -680,8 +681,7 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 						prePoly, rect, "small",
 					)
 				}
-				if iouQuad >= iouThreshold && iouPre < 0.01 {
-
+				if iouQuad2 >= iouThreshold && iouPre < 0.01 {
 					polygonPoints = append(polygonPoints, quad)
 					continue
 				}

@@ -36,7 +36,7 @@ func main() {
 
 	docLayoutSession := layout.NewLayoutDetSession(layoutDetSessionInternal)
 
-	imagePath := "test/images/huaqi.png"
+	imagePath := "test/images/layout1.png"
 
 	imageMat := gocv.IMRead(imagePath, gocv.IMReadColor)
 	layoutDetResults, err := docLayoutSession.Run(&imageMat)
@@ -84,7 +84,7 @@ func main() {
 	//w.IMShow(imageMat)
 	//w.WaitKey(0)
 	// 保存图片
-	gocv.IMWrite("layout_result.jpg", imageMat)
+	//gocv.IMWrite("layout_result.jpg", imageMat)
 	for i := 0; i < len(layoutDetResults); i++ {
 
 		layoutDet := layoutDetResults[i]
