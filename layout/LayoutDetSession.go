@@ -671,6 +671,12 @@ func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW 
 			if iouQuad >= 0.95 {
 				quad = rect
 			}
+			// [[237, 1082], [237, 1301], [237, 1324], [237, 1367], [412, 1367], [444, 1367], [476, 1367], [572, 1411], [2910, 1411], [2910, 1082]]
+			// [(2858,447) (2399,447) (2128,471) (2095,471) (2065,471) (1809,471) (1635,471) (1635,587) (1635,681) (2843,681)]
+
+			polygon = common.SortClockwiseByAngle(polygon)
+			fmt.Println(polygon)
+			fmt.Println(quad)
 
 			iouQuad, _ = CalculatePolygonOverlapRatio(
 				polygon, quad, "union",
