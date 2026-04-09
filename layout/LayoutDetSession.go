@@ -535,162 +535,165 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 
 		box := layoutDetBox[i]
 
-		rect := polygonPointsByMasks(box, maxBoxW, scaleH, scaleW, layoutShapeMode)
+		// 默认是200
+		hm := 200
+		wm := 200
+		// 原图片坐标系
+		minX := box.Point[0]
+		minY := box.Point[1]
+		maxX := box.Point[2]
+		maxY := box.Point[3]
 
-		polygonPoints = append(polygonPoints, rect)
+		boxW, boxH := maxX-minX, maxY-minY
+
+		// 默认矩形（四个顶点，顺序：左上、右上、右下、左下）
+		rect := []image.Point{
+			{minX, minY},
+			{maxX, minY},
+			{maxX, maxY},
+			{minX, maxY},
+		}
+
+		if boxW <= 0 || boxH <= 0 {
+			polygonPoints = append(polygonPoints, rect)
+			continue
+		}
+
+		// 原图坐标 → mask坐标 (坐标系转换（大图 → 小图）)
+		minW := int(math.Min(math.Max(0, float64(math.Round(float64(minX)*float64(scaleW)))), float64(wm)))
+		maxW := int(math.Min(math.Max(0, float64(math.Round(float64(maxX)*float64(scaleW)))), float64(wm)))
+
+		minH := int(math.Min(math.Max(0, float64(math.Round(float64(minY)*float64(scaleH)))), float64(hm)))
+		maxH := int(math.Min(math.Max(0, float64(math.Round(float64(maxY)*float64(scaleH)))), float64(hm)))
+
+		mask := box.Mask
+		rows := maxH - minH
+		cols := (wm + maxW) - (wm + minW)
+		mat := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
+
+		defer mat.Close()
+		var count = int32(0)
+
+		// 把模型输出的掩码处理
+		for row := minH; row < maxH; row++ {
+			h := row - minH
+			maskStart := row*wm + minW
+			maskEnd := row*wm + maxW
+			// 找到这个位置的数据
+			m := mask[maskStart:maskEnd]
+			fmt.Printf("%v", m)
+			fmt.Println()
+			for w := 0; w < len(m); w++ {
+				// 设置改坐标
+				mat.SetUCharAt(h, w, uint8(m[w]))
+				count += m[w]
+			}
+		}
+		if count == 0 {
+			polygonPoints = append(polygonPoints, rect)
+			continue
+		}
+		// 按 200 行，每行 200 个元素打印
+		for i := 0; i < 200; i++ {
+			for j := 0; j < 200; j++ {
+				idx := i*200 + j
+				fmt.Printf("%v ", mask[idx]) // 元素之间用空格分隔
+			}
+			fmt.Println() // 每打印完一行换行
+		}
+		resizedMask := gocv.NewMat()
+		defer resizedMask.Close()
+		err := gocv.Resize(mat, &resizedMask, image.Pt(boxW, boxH), 0, 0, gocv.InterpolationNearestNeighbor)
+		if err != nil {
+			panic("failed to resize image")
+		}
+
+		//resizedMaskW := gocv.NewWindow(`resizedMask`)
+		//resizedMaskW.ResizeWindow(boxW, boxH)
+		//resizedMaskW.IMShow(resizedMask)
+		//resizedMaskW.WaitKey(0)
+
+		maxAllowedDist := maxBoxW
+		if boxW > int(float32(maxBoxW)*0.6) {
+			maxAllowedDist = boxW
+		}
+		// 转换多点边界框（核心）
+		polygon := mask2polygon(resizedMask, maxAllowedDist)
+
+		if len(polygon) < 4 {
+			polygonPoints = append(polygonPoints, rect)
+			continue
+		}
+
+		// 在检测时候是缩图的格式，现在把坐标转换原来的坐标
+		if len(polygon) > 0 {
+			for j := 0; j < len(polygon); j++ {
+				poly := polygon[j]
+				poly.X = poly.X + minX
+				poly.Y = poly.Y + minY
+				polygon[j] = poly
+			}
+		}
+
+		if layoutShapeMode == "poly" {
+			polygonPoints = append(polygonPoints, polygon)
+			// 返回完整多边形
+			continue
+		} else if layoutShapeMode == "quad" {
+			// 多边形转换 四边形
+			quad := convertPolygonToQuad(polygon)
+			if quad != nil && len(quad) > 0 {
+				polygonPoints = append(polygonPoints, quad)
+
+			} else {
+				polygonPoints = append(polygonPoints, rect)
+			}
+			continue
+		} else if layoutShapeMode == "auto" {
+			iouThreshold := 0.8
+			// 多边形转换 四边形
+			quad := convertPolygonToQuad(polygon)
+
+			if quad != nil && len(quad) > 0 {
+
+				iouQuad, _ := CalculatePolygonOverlapRatio(
+					rect,
+					quad,
+					"union",
+				)
+
+				if iouQuad >= 0.95 {
+					quad = rect
+				}
+				// 判断用四边形（quad）替代多边形（polygon），会不会“失真太多”。
+				iouQuad, _ = CalculatePolygonOverlapRatio(
+					polygon, quad, "union",
+				)
+
+				var prePoly []image.Point
+				if len(polygonPoints) > 0 {
+					prePoly = polygonPoints[len(polygonPoints)-1]
+				}
+				iouPre := float64(0)
+				if prePoly != nil {
+					iouPre, _ = CalculatePolygonOverlapRatio(
+						prePoly, rect, "small",
+					)
+				}
+				if iouQuad >= iouThreshold && iouPre < 0.01 {
+
+					polygonPoints = append(polygonPoints, quad)
+					continue
+				}
+
+			}
+			polygonPoints = append(polygonPoints, polygon)
+		} else {
+			panic("invalid layoutShapeMode")
+		}
+
 	}
 	return polygonPoints
-}
-
-func polygonPointsByMasks(box LayoutDetBox, maxBoxW int, scaleH float32, scaleW float32, layoutShapeMode string) []image.Point {
-
-	// 默认是200
-	hm := 200
-	wm := 200
-	// 原图片坐标系
-	minX := box.Point[0]
-	minY := box.Point[1]
-	maxX := box.Point[2]
-	maxY := box.Point[3]
-
-	boxW, boxH := maxX-minX, maxY-minY
-
-	// 默认矩形（四个顶点，顺序：左上、右上、右下、左下）
-	rect := []image.Point{
-		{minX, minY},
-		{maxX, minY},
-		{maxX, maxY},
-		{minX, maxY},
-	}
-
-	if boxW <= 0 || boxH <= 0 {
-		return rect
-	}
-
-	// 原图坐标 → mask坐标 (坐标系转换（大图 → 小图）)
-	minW := int(math.Min(math.Max(0, float64(common.Round06(float64(minX)*float64(scaleW)))), float64(wm)))
-	maxW := int(math.Min(math.Max(0, float64(common.Round06(float64(maxX)*float64(scaleW)))), float64(wm)))
-
-	minH := int(math.Min(math.Max(0, float64(common.Round06(float64(minY)*float64(scaleH)))), float64(hm)))
-	maxH := int(math.Min(math.Max(0, float64(common.Round06(float64(maxY)*float64(scaleH)))), float64(hm)))
-
-	mask := box.Mask
-	rows := maxH - minH
-	cols := (wm + maxW) - (wm + minW)
-	mat := gocv.NewMatWithSize(rows, cols, gocv.MatTypeCV8U)
-
-	defer mat.Close()
-	var count = int32(0)
-
-	// 把模型输出的掩码处理
-	for row := minH; row < maxH; row++ {
-		maskStart := row*wm + minW
-		maskEnd := row*wm + maxW
-		// 找到这个位置的数据
-		m := mask[maskStart:maskEnd]
-		//fmt.Printf("%v", m)
-		//fmt.Println()
-		for w := 0; w < len(m); w++ {
-			h := row - minH
-			// 设置改坐标
-			mat.SetUCharAt(h, w, uint8(m[w]))
-			count += m[w]
-		}
-	}
-	//// 按 200 行，每行 200 个元素打印
-	//for i := 0; i < 200; i++ {
-	//	for j := 0; j < 200; j++ {
-	//		idx := i*200 + j
-	//		fmt.Printf("%v ", mask[idx]) // 元素之间用空格分隔
-	//	}
-	//	fmt.Println() // 每打印完一行换行
-	//}
-	/**
-	如果模型输出的掩码都是0证明当前块图不需要进行处理了
-	*/
-	if count == 0 {
-		return rect
-	}
-	resizedMask := gocv.NewMat()
-	defer resizedMask.Close()
-	err := gocv.Resize(mat, &resizedMask, image.Pt(boxW, boxH), 0, 0, gocv.InterpolationNearestNeighbor)
-	if err != nil {
-		panic("failed to resize image")
-	}
-
-	//resizedMaskW := gocv.NewWindow(`resizedMask`)
-	//resizedMaskW.ResizeWindow(boxW, boxH)
-	//resizedMaskW.IMShow(resizedMask)
-	//resizedMaskW.WaitKey(0)
-
-	maxAllowedDist := maxBoxW
-	if boxW > int(float32(maxBoxW)*0.6) {
-		maxAllowedDist = boxW
-	}
-	// 转换多点边界框（核心）
-	polygon := mask2polygon(resizedMask, maxAllowedDist)
-
-	if len(polygon) < 4 {
-		return rect
-	}
-
-	// 在检测时候是缩图的格式，现在把坐标转换原来的坐标
-	if len(polygon) > 0 {
-		for j := 0; j < len(polygon); j++ {
-			poly := polygon[j]
-			poly.X = poly.X + minX
-			poly.Y = poly.Y + minY
-			polygon[j] = poly
-		}
-	}
-
-	if layoutShapeMode == "poly" {
-		// 返回完整多边形
-		return polygon
-	} else if layoutShapeMode == "quad" {
-		// 多边形转换 四边形
-		quad := convertPolygonToQuad(polygon)
-		if quad != nil && len(quad) > 0 {
-			return quad
-		}
-		return rect
-	} else if layoutShapeMode == "auto" {
-
-		// 多边形转换 四边形
-		quad := convertPolygonToQuad(polygon)
-
-		if quad != nil && len(quad) > 0 {
-			//fmt.Println(rect)
-			//fmt.Println(quad)
-			iouQuad, _ := CalculatePolygonOverlapRatio(
-				rect,
-				quad,
-				"union",
-			)
-
-			if iouQuad >= 0.95 {
-				quad = rect
-			}
-			// [[237, 1082], [237, 1301], [237, 1324], [237, 1367], [412, 1367], [444, 1367], [476, 1367], [572, 1411], [2910, 1411], [2910, 1082]]
-			// [(2858,447) (2399,447) (2128,471) (2095,471) (2065,471) (1809,471) (1635,471) (1635,587) (1635,681) (2843,681)]
-
-			polygon = common.SortClockwiseByAngle(polygon)
-			fmt.Println(polygon)
-			fmt.Println(quad)
-
-			iouQuad, _ = CalculatePolygonOverlapRatio(
-				polygon, quad, "union",
-			)
-
-			fmt.Println(iouQuad)
-		}
-
-		return polygon
-	} else {
-
-		return rect
-	}
-	return rect
 }
 func CalculatePolygonOverlapRatio(
 	polygon1, polygon2 []image.Point,
@@ -714,7 +717,7 @@ func CalculatePolygonOverlapRatio(
 		return 0, fmt.Errorf("intersection failed: %w", err)
 	}
 	// 交集面积（多个多边形求和，相当于 .area）
-	intersectionArea := paths64TotalArea(intersection) // 36464.0
+	intersectionArea := paths64TotalArea(intersection)
 
 	// 计算并集（相当于 poly1.union(poly2)）
 	union, err := clipper.Union64(subject, clip, fillRule)
@@ -722,7 +725,7 @@ func CalculatePolygonOverlapRatio(
 		return 0, fmt.Errorf("union failed: %w", err)
 	}
 	// 并集面积（多个多边形求和，相当于 .area）
-	unionArea := paths64TotalArea(union) //36915.0
+	unionArea := paths64TotalArea(union)
 
 	// 原始多边形面积（用于 small/large 模式）
 	area1 := paths64TotalArea(subject)
@@ -766,8 +769,11 @@ func pointsToPaths64(points []image.Point) clipper.Paths64 {
 
 // paths64TotalArea 计算 Paths64 的总面积（遍历所有多边形求和）
 func paths64TotalArea(paths clipper.Paths64) float64 {
-	return clipper.Area64(paths[0])
-
+	total := 0.0
+	for _, p := range paths {
+		total += math.Abs(clipper.Area64(p))
+	}
+	return total
 }
 func mask2polygon(mask gocv.Mat, maxAllowedDist int) []image.Point {
 	epsilonRatio := 0.004
