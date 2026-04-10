@@ -36,7 +36,7 @@ func main() {
 
 	defer session.Destroy()
 
-	imagePath := "https://github.com/weihuanwan/paddle-ocr-model/blob/main/test.jpg?raw=true"
+	imagePath := "test/images/test.jpg"
 
 	// 检测
 	ocrResult, _ := session.RunOCR(imagePath)
