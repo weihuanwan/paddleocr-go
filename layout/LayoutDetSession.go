@@ -1,8 +1,10 @@
 package layout
 
 import (
+	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"math"
 	"slices"
 	"sort"
@@ -1203,4 +1205,68 @@ func convertPolygonToQuad(polygon []image.Point) []image.Point {
 	}
 
 	return result
+}
+func CropByBoxes(layoutDet *LayoutDetResult, imageMat gocv.Mat) (gocv.Mat, error) {
+	// 参数校验
+	if layoutDet == nil {
+		return gocv.Mat{}, errors.New("layoutDet is nil")
+	}
+	if imageMat.Empty() {
+		return gocv.Mat{}, errors.New("imageMat is empty")
+	}
+	if len(layoutDet.Point) != 4 {
+		return gocv.Mat{}, errors.New("invalid point format, expected [xmin, ymin, xmax, ymax]")
+	}
+
+	xmin, ymin, xmax, ymax := layoutDet.Point[0], layoutDet.Point[1], layoutDet.Point[2], layoutDet.Point[3]
+
+	rect := image.Rect(xmin, ymin, xmax, ymax)
+	region := imageMat.Region(rect)
+
+	// 无多边形时直接返回副本（避免原图释放后region失效）
+	if len(layoutDet.PolygonPoints) == 0 {
+		result := region.Clone()
+		return result, nil
+	}
+
+	// 创建mask
+	mask := gocv.NewMatWithSize(region.Rows(), region.Cols(), gocv.MatTypeCV8U)
+	defer mask.Close()
+
+	// 构建局部坐标的多边形
+	pts := make([]image.Point, 0, len(layoutDet.PolygonPoints))
+	for _, p := range layoutDet.PolygonPoints {
+		// 转换为相对于裁剪区域的坐标
+		localX := p.X - xmin
+		localY := p.Y - ymin
+
+		// 检查转换后的坐标是否在有效范围内
+		if localX < 0 || localX >= region.Cols() || localY < 0 || localY >= region.Rows() {
+			return gocv.Mat{}, fmt.Errorf("polygon point (%d,%d) out of region bounds after transform", localX, localY)
+		}
+		pts = append(pts, image.Pt(localX, localY))
+	}
+
+	// 填充多边形
+	pointsVector := gocv.NewPointsVectorFromPoints([][]image.Point{pts})
+	defer pointsVector.Close() // 修复：释放资源
+
+	gocv.FillPoly(&mask, pointsVector, color.RGBA{255, 255, 255, 0})
+
+	// 创建结果图（透明背景更通用，或根据需求改为白色）
+	result := gocv.NewMatWithSize(region.Rows(), region.Cols(), region.Type())
+	defer func() {
+		if err := recover(); err != nil {
+			result.Close()
+		}
+	}()
+
+	// 设置背景色（白色）
+	gocv.Rectangle(&result, image.Rect(0, 0, result.Cols(), result.Rows()),
+		color.RGBA{255, 255, 255, 0}, -1)
+
+	// 应用mask拷贝有效区域
+	region.CopyToWithMask(&result, mask)
+
+	return result, nil
 }
