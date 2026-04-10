@@ -7,7 +7,7 @@ import (
 	"math"
 	"sort"
 
-	clipper "github.com/cwbudde/go-clipper2/port"
+	go_clipper2 "github.com/bolom009/go-clipper2"
 	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
@@ -152,27 +152,25 @@ func unclip(box []image.Point, unclipRatio float32) gocv.PointVector {
 
 	distance := area * float64(unclipRatio) / length
 
-	// 2️⃣ 一定要 scale（核心）
-
-	path64 := make(clipper.Path64, len(box))
-
+	// 2️⃣ 转换为 clipper2 格式
+	path := make(go_clipper2.Path64, len(box))
 	for i, p := range box {
-		path64[i] = clipper.Point64{
+		path[i] = go_clipper2.Point64{
 			X: int64(p.X),
 			Y: int64(p.Y),
 		}
 	}
+	path64 := go_clipper2.Paths64{path} // 注意：Paths64 是 []Path64
 
-	// 3️⃣ ArcTolerance 要跟 scale 对齐
-	co := clipper.NewClipperOffset(2.0, 0.25)
-	co.AddPath(path64, clipper.JoinRound, clipper.EndPolygon)
+	// 3️⃣ 创建 ClipperOffset 并执行
+	co := go_clipper2.NewClipperOffset(2.0, 0.25, false, false)
+	co.AddPaths(path64, go_clipper2.Miter, go_clipper2.Polygon)
 
-	solution, _ := co.Execute(distance)
-
+	solution := make(go_clipper2.Paths64, 0)
+	co.Execute64(distance, &solution)
 	if len(solution) == 0 {
 		return gocv.NewPointVector()
 	}
-
 	// 4️⃣ 转回 gocv.PointVector（只取第一个 polygon）
 	result := gocv.NewPointVector()
 
