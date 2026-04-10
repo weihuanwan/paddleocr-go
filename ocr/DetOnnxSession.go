@@ -163,8 +163,8 @@ func unclip(box []image.Point, unclipRatio float32) gocv.PointVector {
 	path64 := go_clipper2.Paths64{path} // 注意：Paths64 是 []Path64
 
 	// 3️⃣ 创建 ClipperOffset 并执行
-	co := go_clipper2.NewClipperOffset(2.0, 0.25, false, false)
-	co.AddPaths(path64, go_clipper2.Miter, go_clipper2.Polygon)
+	co := go_clipper2.NewClipperOffset(2.0, 0.5, false, false)
+	co.AddPaths(path64, go_clipper2.Round, go_clipper2.Polygon)
 
 	solution := make(go_clipper2.Paths64, 0)
 	co.Execute64(distance, &solution)
