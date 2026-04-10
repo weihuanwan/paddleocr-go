@@ -1,14 +1,13 @@
 package layout
 
 import (
-	"errors"
 	"fmt"
 	"image"
 	"math"
 	"slices"
 	"sort"
 
-	clipper "github.com/cwbudde/go-clipper2/port"
+	go_clipper2 "github.com/bolom009/go-clipper2"
 	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
 	"gocv.io/x/gocv"
@@ -650,15 +649,13 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 		} else if layoutShapeMode == "auto" {
 			iouThreshold := 0.8
 			// 多边形转换 四边形
-			polygonToQuad := convertPolygonToQuad(polygon)
-
-			var quad = []image.Point{}
-
-			if polygonToQuad != nil && len(polygonToQuad) > 0 {
-
-				iouQuad1, _ := CalculatePolygonOverlapRatio(
-					rect,
-					polygonToQuad,
+			quad := convertPolygonToQuad(polygon)
+			if quad != nil && len(quad) > 0 {
+				quadList := quad
+				rectList := rect
+				iouQuad1 := CalculatePolygonOverlapRatio(
+					rectList,
+					quadList,
 					"union",
 				)
 
@@ -667,8 +664,8 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 				}
 
 				// 判断用四边形（quad）替代多边形（polygon），会不会“失真太多”。
-				iouQuad2, _ := CalculatePolygonOverlapRatio(
-					polygonToQuad, quad, "union",
+				iouQuad2 := CalculatePolygonOverlapRatio(
+					polygon, quadList, "union",
 				)
 
 				var prePoly []image.Point
@@ -677,7 +674,7 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 				}
 				iouPre := float64(0)
 				if prePoly != nil {
-					iouPre, _ = CalculatePolygonOverlapRatio(
+					iouPre = CalculatePolygonOverlapRatio(
 						prePoly, rect, "small",
 					)
 				}
@@ -685,7 +682,6 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 					polygonPoints = append(polygonPoints, quad)
 					continue
 				}
-
 			}
 			polygonPoints = append(polygonPoints, polygon)
 		} else {
@@ -698,10 +694,10 @@ func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
 func CalculatePolygonOverlapRatio(
 	polygon1, polygon2 []image.Point,
 	mode string,
-) (float64, error) {
+) float64 {
 	// 参数校验（与 Python 类似）
 	if len(polygon1) < 3 || len(polygon2) < 3 {
-		return 0, errors.New("polygons must have at least 3 points")
+		return 0
 	}
 
 	// 转换为 clipper Paths64（相当于 Polygon()）
@@ -709,21 +705,17 @@ func CalculatePolygonOverlapRatio(
 	clip := pointsToPaths64(polygon2)
 
 	// 使用 NonZero 填充规则（Shapely 默认行为）
-	fillRule := clipper.NonZero
+	fillRule := go_clipper2.NonZero
 
 	// 计算交集（相当于 poly1.intersection(poly2)）
-	intersection, err := clipper.Intersect64(subject, clip, fillRule)
-	if err != nil {
-		return 0, fmt.Errorf("intersection failed: %w", err)
-	}
+	intersection := go_clipper2.IntersectWithClipPaths64(subject, clip, fillRule)
+
 	// 交集面积（多个多边形求和，相当于 .area）
 	intersectionArea := paths64TotalArea(intersection)
 
 	// 计算并集（相当于 poly1.union(poly2)）
-	union, err := clipper.Union64(subject, clip, fillRule)
-	if err != nil {
-		return 0, fmt.Errorf("union failed: %w", err)
-	}
+	union := go_clipper2.UnionWithClipPaths64(subject, clip, fillRule)
+
 	// 并集面积（多个多边形求和，相当于 .area）
 	unionArea := paths64TotalArea(union)
 
@@ -735,43 +727,43 @@ func CalculatePolygonOverlapRatio(
 	switch mode {
 	case "union", "":
 		if unionArea == 0 {
-			return 0, nil
+			return 0
 		}
-		return intersectionArea / unionArea, nil
+		return intersectionArea / unionArea
 
 	case "small":
 		smallArea := math.Min(area1, area2)
 		if smallArea == 0 {
-			return 0, nil
+			return 0
 		}
-		return intersectionArea / smallArea, nil
+		return intersectionArea / smallArea
 
 	case "large":
 		largeArea := math.Max(area1, area2)
 		if largeArea == 0 {
-			return 0, nil
+			return 0
 		}
-		return intersectionArea / largeArea, nil
+		return intersectionArea / largeArea
 
 	default:
-		return 0, fmt.Errorf("unknown mode: %s", mode)
+		panic("invalid layoutShapeMode")
 	}
 }
 
 // pointsToPaths64 将 []image.Point 转换为 clipper.Paths64
-func pointsToPaths64(points []image.Point) clipper.Paths64 {
-	path := make(clipper.Path64, len(points))
+func pointsToPaths64(points []image.Point) go_clipper2.Paths64 {
+	path := make(go_clipper2.Path64, len(points))
 	for i, p := range points {
-		path[i] = clipper.Point64{X: int64(p.X), Y: int64(p.Y)}
+		path[i] = go_clipper2.Point64{X: int64(p.X), Y: int64(p.Y)}
 	}
-	return clipper.Paths64{path}
+	return go_clipper2.Paths64{path}
 }
 
 // paths64TotalArea 计算 Paths64 的总面积（遍历所有多边形求和）
-func paths64TotalArea(paths clipper.Paths64) float64 {
+func paths64TotalArea(paths go_clipper2.Paths64) float64 {
 	total := 0.0
 	for _, p := range paths {
-		total += math.Abs(clipper.Area64(p))
+		total += math.Abs(go_clipper2.Area64(p))
 	}
 	return total
 }
