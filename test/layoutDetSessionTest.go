@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/weihuanwan/paddleocr-go/common"
 	"github.com/weihuanwan/paddleocr-go/layout"
 	"github.com/weihuanwan/paddleocr-go/ocr"
 	ort "github.com/yalue/onnxruntime_go"
@@ -93,13 +92,13 @@ func main() {
 		//
 		//cropImage := imageMat.Region(rect)
 
-		cropImage, err := common.CropByBoxes(layoutDet, imageMat)
+		cropImage, err := layout.CropByBoxes(layoutDet, imageMat)
 		if err != nil {
 			panic(err)
 		}
 		name := fmt.Sprintf("%dlayout_result.jpg", i)
 
-		gocv.IMWrite(name, cropImage)
+		gocv.IMWrite(name, *cropImage)
 
 	}
 
