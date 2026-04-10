@@ -47,7 +47,6 @@ type LayoutDetResult struct {
 	Order         int           // 排序
 	Point         []int         // 四边形 4个点位置
 	PolygonPoints []image.Point // 多边形位置
-	Mask          []int32
 }
 
 func NewLayoutDetSession(onnxSession *ort.DynamicAdvancedSession) *LayoutDetSession {
@@ -307,48 +306,18 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 	polygonPoints := extractPolygonPointsByMasks(keepMaskBoxes, scale, "auto")
 
 	layoutUnclipRatio := []float64{1.0, 1.0}
-	unclipResult := unclipBoxes(keepMaskBoxes, layoutUnclipRatio)
-
+	// 结果组装
 	layoutDetResults := restructuredBoxes(
-		unclipResult,
+		keepMaskBoxes,
 		polygonPoints,
+		layoutUnclipRatio,
 		originImageH,
 		originImageW,
 	)
 	return layoutDetResults, nil
 }
 
-func restructuredBoxes(results []*LayoutDetResult, polygonPoints [][]image.Point, originImageH int, originImageW int) []*LayoutDetResult {
-	layoutDetResults := make([]*LayoutDetResult, 0, len(results))
-	for i := 0; i < len(results); i++ {
-		res := results[i]
-
-		xmin, ymin, xmax, ymax := res.Point[0], res.Point[1], res.Point[2], res.Point[3]
-
-		xmin = max(0, xmin)
-		ymin = max(0, ymin)
-		xmax = min(originImageW, xmax)
-		ymax = min(originImageH, ymax)
-		if xmax <= xmin || ymax <= ymin {
-			continue
-		}
-		if polygonPoints != nil && len(polygonPoints) > 0 {
-			polygonPoint := polygonPoints[i]
-			if polygonPoint != nil {
-				res.PolygonPoints = polygonPoint
-			}
-		}
-
-		res.Order = i + 1
-
-		layoutDetResults = append(layoutDetResults, res)
-
-	}
-
-	return layoutDetResults
-}
-
-func unclipBoxes(boxes []LayoutDetBox, layoutUnclipRatio []float64) []*LayoutDetResult {
+func restructuredBoxes(boxes []LayoutDetBox, polygonPoints [][]image.Point, layoutUnclipRatio []float64, originImageH, originImageW int) []*LayoutDetResult {
 
 	layoutDetResults := make([]*LayoutDetResult, 0, len(boxes))
 
@@ -363,22 +332,39 @@ func unclipBoxes(boxes []LayoutDetBox, layoutUnclipRatio []float64) []*LayoutDet
 		centerX := box.Point[0] + width/2
 		centerY := box.Point[1] + height/2
 
-		newX1 := centerX - newW/2
-		newY1 := centerY - newH/2
-		newX2 := centerX + newW/2
-		newY2 := centerY + newH/2
+		xmin := centerX - newW/2
+		ymin := centerY - newH/2
+		xmax := centerX + newW/2
+		ymax := centerY + newH/2
 
-		layoutDetResults = append(layoutDetResults, &LayoutDetResult{
+		xmin = max(0, xmin)
+		ymin = max(0, ymin)
+		xmax = min(originImageW, xmax)
+		ymax = min(originImageH, ymax)
+		if xmax <= xmin || ymax <= ymin {
+			continue
+		}
+
+		layoutDetResult := &LayoutDetResult{
 			ClsId: box.ClsId,
 			Label: box.Label,
 			Score: box.Score,
 			Order: box.Order,
 			Point: []int{
-				newX1, newY1, newX2, newY2,
+				xmin, ymin, xmax, ymax,
 			},
-			PolygonPoints: nil,
-			Mask:          nil,
-		})
+		}
+
+		if polygonPoints != nil && len(polygonPoints) > 0 {
+			polygonPoint := polygonPoints[i]
+			if polygonPoint != nil {
+				layoutDetResult.PolygonPoints = polygonPoint
+			}
+		}
+
+		layoutDetResult.Order = i + 1
+
+		layoutDetResults = append(layoutDetResults, layoutDetResult)
 
 	}
 	return layoutDetResults
