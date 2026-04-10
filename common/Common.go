@@ -1,12 +1,13 @@
 package common
 
 import (
+	"errors"
 	"fmt"
-	"image"
-	"math"
-	"sort"
-
+	"github.com/weihuanwan/paddleocr-go/layout"
 	"gocv.io/x/gocv"
+	"image"
+	"image/color"
+	"math"
 )
 
 func Round06(x float64) int {
@@ -94,66 +95,67 @@ func GetNormalizeAlphaBeta() ([3]float32, [3]float32) {
 	return alpha, beta
 }
 
-// SortClockwiseByAngle 将无序点集按顺时针方向排序（图像坐标系）
-// 返回一个顺时针排列的顶点切片（假设所有点构成凸多边形）
-func SortClockwiseByAngle(points []image.Point) []image.Point {
-	if len(points) < 3 {
-		return points
+func CropByBoxes(layoutDet *layout.LayoutDetResult, imageMat gocv.Mat) (gocv.Mat, error) {
+	// 参数校验
+	if layoutDet == nil {
+		return gocv.Mat{}, errors.New("layoutDet is nil")
+	}
+	if imageMat.Empty() {
+		return gocv.Mat{}, errors.New("imageMat is empty")
+	}
+	if len(layoutDet.Point) != 4 {
+		return gocv.Mat{}, errors.New("invalid point format, expected [xmin, ymin, xmax, ymax]")
 	}
 
-	pointsLen := len(points)
-	// 读取4个点并计算中心
-	quad := make([][2]float64, pointsLen)
-	var centerX, centerY float64
-	for i := 0; i < pointsLen; i++ {
-		quad[i][0] = float64(points[0].X)
-		quad[i][1] = float64(points[0].Y)
-		centerX += quad[i][0]
-		centerY += quad[i][1]
-	}
-	centerX /= float64(pointsLen)
-	centerY /= float64(pointsLen)
+	xmin, ymin, xmax, ymax := layoutDet.Point[0], layoutDet.Point[1], layoutDet.Point[2], layoutDet.Point[3]
 
-	// 按角度排序（逆时针）
-	type pointInfo struct {
-		idx   int
-		angle float64
-		x, y  float64
+	rect := image.Rect(xmin, ymin, xmax, ymax)
+	region := imageMat.Region(rect)
+
+	// 无多边形时直接返回副本（避免原图释放后region失效）
+	if len(layoutDet.PolygonPoints) == 0 {
+		result := region.Clone()
+		return result, nil
 	}
 
-	pts := make([]pointInfo, 4)
-	for i := 0; i < 4; i++ {
-		pts[i] = pointInfo{
-			idx:   i,
-			angle: math.Atan2(quad[i][1]-centerY, quad[i][0]-centerX),
-			x:     quad[i][0],
-			y:     quad[i][1],
+	// 创建mask
+	mask := gocv.NewMatWithSize(region.Rows(), region.Cols(), gocv.MatTypeCV8U)
+	defer mask.Close()
+
+	// 构建局部坐标的多边形
+	pts := make([]image.Point, 0, len(layoutDet.PolygonPoints))
+	for _, p := range layoutDet.PolygonPoints {
+		// 转换为相对于裁剪区域的坐标
+		localX := p.X - xmin
+		localY := p.Y - ymin
+
+		// 检查转换后的坐标是否在有效范围内
+		if localX < 0 || localX >= region.Cols() || localY < 0 || localY >= region.Rows() {
+			return gocv.Mat{}, fmt.Errorf("polygon point (%d,%d) out of region bounds after transform", localX, localY)
 		}
+		pts = append(pts, image.Pt(localX, localY))
 	}
 
-	sort.Slice(pts, func(i, j int) bool {
-		return pts[i].angle < pts[j].angle
-	})
+	// 填充多边形
+	pointsVector := gocv.NewPointsVectorFromPoints([][]image.Point{pts})
+	defer pointsVector.Close() // 修复：释放资源
 
-	// 找到左上角（x+y最小）
-	topLeftIdx := 0
-	minSum := pts[0].x + pts[0].y
-	for i := 1; i < 4; i++ {
-		if sum := pts[i].x + pts[i].y; sum < minSum {
-			minSum = sum
-			topLeftIdx = i
+	gocv.FillPoly(&mask, pointsVector, color.RGBA{255, 255, 255, 0})
+
+	// 创建结果图（透明背景更通用，或根据需求改为白色）
+	result := gocv.NewMatWithSize(region.Rows(), region.Cols(), region.Type())
+	defer func() {
+		if err := recover(); err != nil {
+			result.Close()
 		}
-	}
+	}()
 
-	// 构建结果（从左上角开始顺时针）
-	result := make([]image.Point, 4)
-	for i := 0; i < 4; i++ {
-		src := pts[(topLeftIdx+i)%4]
-		result[i] = image.Point{
-			X: int(math.Round(src.x)),
-			Y: int(math.Round(src.y)),
-		}
-	}
+	// 设置背景色（白色）
+	gocv.Rectangle(&result, image.Rect(0, 0, result.Cols(), result.Rows()),
+		color.RGBA{255, 255, 255, 0}, -1)
 
-	return result
+	// 应用mask拷贝有效区域
+	region.CopyToWithMask(&result, mask)
+
+	return result, nil
 }
