@@ -28,26 +28,6 @@ type LayoutDetSession struct {
 	LayoutMergeBoxesMode []string // 标签字典
 	Threshold            float32  // 置信度 默认 0.3
 }
-type LayoutDetBox struct {
-	ClsId int
-	Label string
-	Score float32
-	Order int
-
-	Point [4]int
-
-	Mask []int32
-}
-
-// 版面分析返回结果
-type LayoutDetResult struct {
-	ClsId         int           // 标签的 id
-	Label         string        // 标签
-	Score         float32       // 置信度
-	Order         int           // 排序
-	Point         []int         // 四边形 4个点位置
-	PolygonPoints []image.Point // 多边形位置
-}
 
 func NewLayoutDetSession(onnxSession *ort.DynamicAdvancedSession) *LayoutDetSession {
 	scale := float32(1.0 / 255.0)
@@ -90,7 +70,7 @@ func NewLayoutDetSession(onnxSession *ort.DynamicAdvancedSession) *LayoutDetSess
 	}
 }
 
-func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*LayoutDetResult, error) {
+func (layoutDet *LayoutDetSession) Run(originImage *gocv.Mat) ([]*common.LayoutDetResult, error) {
 	// 缩放
 	resizedImage, scale, err := layoutDet.resize(originImage)
 	if err != nil {
@@ -194,11 +174,11 @@ func (layoutDet *LayoutDetSession) resize(imageMat *gocv.Mat) (*gocv.Mat, []floa
 
 func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 	masks []int32, originImageH int, originImageW int,
-	scale []float32) ([]*LayoutDetResult, error) {
+	scale []float32) ([]*common.LayoutDetResult, error) {
 
 	step := 7
 	maskSize := 200 * 200
-	layoutDetBoxs := make([]LayoutDetBox, 0)
+	layoutDetBoxs := make([]common.LayoutDetBox, 0)
 	// 1. 处理图片
 	for i := 0; i < len(boxes); i += step {
 
@@ -216,7 +196,7 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 			xmax := int(math.Round(float64(boxes[i+4])))
 			ymax := int(math.Round(float64(boxes[i+5])))
 			order := int(boxes[i+6])
-			layoutDetResult := LayoutDetBox{
+			layoutDetResult := common.LayoutDetBox{
 				ClsId: clsId,
 				Score: score,
 				Order: order,
@@ -231,7 +211,7 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 	// 解决同一个区域出现多个标签问题，取最高的，过滤最低的
 	layoutDetResultNMS := NMSLayout(layoutDetBoxs, 0.6, 0.98)
 
-	filteredBoxes := make([]LayoutDetBox, 0)
+	filteredBoxes := make([]common.LayoutDetBox, 0)
 	// 处理版面分析把当前输入的图片当做图片输出问题
 	if len(layoutDetResultNMS) > 0 {
 		areaThres := 0.93
@@ -261,7 +241,7 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 
 	// 解决一个大区域内存在小标签问题。如:一个表格内是存在文本标签问题
 	filteredBoxesLen := len(filteredBoxes)
-	keepMaskBoxes := make([]LayoutDetBox, 0, filteredBoxesLen)
+	keepMaskBoxes := make([]common.LayoutDetBox, 0, filteredBoxesLen)
 	if filteredBoxesLen > 0 {
 		keepMask := slices.Repeat([]bool{true}, filteredBoxesLen)
 
@@ -317,9 +297,9 @@ func (layoutDet *LayoutDetSession) formatOutput(boxes []float32, count []int32,
 	return layoutDetResults, nil
 }
 
-func restructuredBoxes(boxes []LayoutDetBox, polygonPoints [][]image.Point, layoutUnclipRatio []float64, originImageH, originImageW int) []*LayoutDetResult {
+func restructuredBoxes(boxes []common.LayoutDetBox, polygonPoints [][]image.Point, layoutUnclipRatio []float64, originImageH, originImageW int) []*common.LayoutDetResult {
 
-	layoutDetResults := make([]*LayoutDetResult, 0, len(boxes))
+	layoutDetResults := make([]*common.LayoutDetResult, 0, len(boxes))
 
 	for i := 0; i < len(boxes); i++ {
 		box := boxes[i]
@@ -345,7 +325,7 @@ func restructuredBoxes(boxes []LayoutDetBox, polygonPoints [][]image.Point, layo
 			continue
 		}
 
-		layoutDetResult := &LayoutDetResult{
+		layoutDetResult := &common.LayoutDetResult{
 			ClsId: box.ClsId,
 			Label: box.Label,
 			Score: box.Score,
@@ -373,7 +353,7 @@ func restructuredBoxes(boxes []LayoutDetBox, polygonPoints [][]image.Point, layo
 /*
 解决同一个区域出现多个标签问题，取最高的，过滤最低的
 */
-func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
+func NMSLayout(boxes []common.LayoutDetBox, iouSame, iouDiff float64) []common.LayoutDetBox {
 
 	if len(boxes) == 0 {
 		return boxes
@@ -384,7 +364,7 @@ func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 		return boxes[i].Score > boxes[j].Score
 	})
 
-	var selected []LayoutDetBox
+	var selected []common.LayoutDetBox
 
 	// 对应 Python: while len(indices) > 0
 	for len(boxes) > 0 {
@@ -394,7 +374,7 @@ func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 		// 当前的添加进去
 		selected = append(selected, currentBox)
 
-		var remaining []LayoutDetBox
+		var remaining []common.LayoutDetBox
 
 		// for i in indices:
 		for i := 1; i < len(boxes); i++ {
@@ -428,7 +408,7 @@ func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
 	return selected
 }
 
-func IoU(a, b LayoutDetBox) float64 {
+func IoU(a, b common.LayoutDetBox) float64 {
 
 	/**
 	框 A                框 B
@@ -501,7 +481,7 @@ func IoU(a, b LayoutDetBox) float64 {
 	return interArea / union
 }
 
-func extractPolygonPointsByMasks(layoutDetBox []LayoutDetBox,
+func extractPolygonPointsByMasks(layoutDetBox []common.LayoutDetBox,
 	scale []float32, layoutShapeMode string) [][]image.Point {
 
 	scaleH := scale[0] / 4
@@ -783,7 +763,7 @@ func mask2polygon(mask gocv.Mat, maxAllowedDist int) []image.Point {
 
 }
 
-func checkContainment(boxes []LayoutDetBox, categoryIndex int, mode string) ([]bool, []bool) {
+func checkContainment(boxes []common.LayoutDetBox, categoryIndex int, mode string) ([]bool, []bool) {
 	n := len(boxes)
 	//我包含了别人
 	containsOther := make([]bool, n)
@@ -823,7 +803,7 @@ func checkContainment(boxes []LayoutDetBox, categoryIndex int, mode string) ([]b
 	return containsOther, containedByOther
 }
 
-func IsContained(box1, box2 LayoutDetBox) bool {
+func IsContained(box1, box2 common.LayoutDetBox) bool {
 
 	x1, y1, x2, y2 := box1.Point[0], box1.Point[1], box1.Point[2], box1.Point[3]
 	x1_p, y1_p, x2_p, y2_p := box2.Point[0], box2.Point[1], box2.Point[2], box2.Point[3]
@@ -1193,7 +1173,7 @@ func convertPolygonToQuad(polygon []image.Point) []image.Point {
 	return result
 }
 
-func CropByBoxes(layoutDet *LayoutDetResult, imageMat gocv.Mat) (*gocv.Mat, error) {
+func CropByBoxes(layoutDet *common.LayoutDetResult, imageMat gocv.Mat) (*gocv.Mat, error) {
 	// 参数校验
 	if layoutDet == nil {
 		return nil, errors.New("layoutDet is nil")
