@@ -47,7 +47,6 @@ func main() {
 		panic(err)
 	}
 	for i := 0; i < len(layoutDetResults); i++ {
-
 		layoutDet := layoutDetResults[i]
 		point := layoutDet.Point
 
@@ -61,24 +60,28 @@ func main() {
 		// 画矩形
 		gocv.Rectangle(&originImage1, rect, color.RGBA{255, 0, 0, 0}, 1)
 
-		// 写标签
+		// 写标签 - 字体更小，显示在区域中间
 		label := fmt.Sprintf("%s %.2f", layoutDet.Label, layoutDet.Score)
 
-		pt := image.Pt(x1, y1-5)
+		// 计算文本尺寸以居中显示
+		textSize := gocv.GetTextSize(label, gocv.FontHersheySimplex, 0.5, 1)
+
+		// 计算矩形中心
+		centerX := (x1 + x2) / 2
+		centerY := (y1 + y2) / 2
+
+		// 文本左上角坐标（基于中心点偏移）
+		textX := centerX - textSize.X/2
+		textY := centerY + textSize.Y/2
+
+		pt := image.Pt(textX, textY)
+
+		// 字体大小 0.5，线条粗细 1
 		gocv.PutText(&originImage1, label, pt,
 			gocv.FontHersheySimplex,
-			0.7,
+			0.5, // 字体缩放因子，原来是 0.7
 			color.RGBA{0, 255, 0, 0},
-			2)
-
-		// 顺序号
-		orderText := fmt.Sprintf("%d", layoutDet.Order)
-		gocv.PutText(&originImage1, orderText,
-			image.Pt(x1, y1-25),
-			gocv.FontHersheySimplex,
-			0.8,
-			color.RGBA{255, 0, 255, 0},
-			2)
+			1)
 	}
 	gocv.IMWrite("layout_result.jpg", originImage1)
 
