@@ -2,8 +2,10 @@ package common
 
 import (
 	"fmt"
-	"gocv.io/x/gocv"
+	"image"
 	"math"
+
+	"gocv.io/x/gocv"
 )
 
 func Round06(x float64) int {
@@ -74,6 +76,20 @@ func HWCToCHW(resizedImage *gocv.Mat) []float32 {
 		}
 	}
 	return chw
+}
+func Resize(imageMat *gocv.Mat, resize [2]int) (*gocv.Mat, []float32, error) {
+	resizeMat := gocv.NewMat()
+
+	err := gocv.Resize(*imageMat, &resizeMat, image.Pt(resize[0], resize[1]), 0, 0, gocv.InterpolationCubic)
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("wiredTableCells resize failed: %v", err)
+	}
+
+	scaleW := float32(resize[0]) / float32(imageMat.Cols())
+	scaleH := float32(resize[1]) / float32(imageMat.Rows())
+
+	return &resizeMat, []float32{scaleH, scaleW}, nil
 }
 
 func GetNormalizeAlphaBeta() ([3]float32, [3]float32) {
