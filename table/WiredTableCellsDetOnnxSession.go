@@ -2,6 +2,7 @@ package table
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/weihuanwan/paddleocr-go/common"
 	ort "github.com/yalue/onnxruntime_go"
@@ -19,6 +20,7 @@ type WiredTableCellsDetOnnxSession struct {
 
 	Resize    [2]int  // 缩放大小，默认640*640
 	Threshold float32 // 置信度 默认 0.3
+	Labels    []string
 }
 
 func NewWiredTableCellsDetOnnxSession(onnxSession *ort.DynamicAdvancedSession) *WiredTableCellsDetOnnxSession {
@@ -31,12 +33,14 @@ func NewWiredTableCellsDetOnnxSession(onnxSession *ort.DynamicAdvancedSession) *
 		alpha[i] = scale / std[i]
 		beta[i] = -mean[i] / std[i]
 	}
+	var labels = []string{"cell"}
 	return &WiredTableCellsDetOnnxSession{
 		onnxSession,
 		alpha,
 		beta,
 		[2]int{640, 640},
 		0.3,
+		labels,
 	}
 }
 
@@ -106,4 +110,112 @@ func (wiredTableCells *WiredTableCellsDetOnnxSession) Run(originImage *gocv.Mat)
 	}
 
 	return nil, err
+}
+func (wiredTableCells *WiredTableCellsDetOnnxSession) formatOutput(boxes []float32, count []int32,
+	masks []int32, originImageH int, originImageW int,
+	scale []float32) ([]*common.LayoutDetResult, error) {
+
+	step := 7
+	maskSize := 200 * 200
+	layoutDetBoxs := make([]common.LayoutDetBox, 0)
+	// 1. 处理图片
+	for i := 0; i < len(boxes); i += step {
+
+		if boxes[i+0] > -1 && boxes[i+1] > wiredTableCells.Threshold {
+			detIndex := i / step
+			maskStart := detIndex * maskSize
+			maskEnd := maskStart + maskSize
+			// 获取像素级掩码
+			mask := masks[maskStart:maskEnd]
+			clsId := int(boxes[i])
+			score := boxes[i+1]
+			// 取这个位置的
+			xmin := int(math.Round(float64(boxes[i+2])))
+			ymin := int(math.Round(float64(boxes[i+3])))
+			xmax := int(math.Round(float64(boxes[i+4])))
+			ymax := int(math.Round(float64(boxes[i+5])))
+
+			layoutDetResult := common.LayoutDetBox{
+				ClsId: clsId,
+				Score: score,
+				Label: wiredTableCells.Labels[clsId],
+				Point: [4]int{xmin, ymin, xmax, ymax},
+				Mask:  mask,
+			}
+			layoutDetBoxs = append(layoutDetBoxs, layoutDetResult)
+		}
+	}
+
+	// 解决同一个区域出现多个标签问题，取最高的，过滤最低的
+	layoutDetResultNMS := common.NMSLayout(layoutDetBoxs, 0.6, 0.98)
+
+	filteredBoxes := make([]common.LayoutDetBox, 0)
+	// 处理版面分析把当前输入的图片当做图片输出问题
+	if len(layoutDetResultNMS) > 0 {
+		areaThres := 0.93
+		if originImageW > originImageH {
+			areaThres = 0.82
+		}
+		imgArea := originImageH * originImageW
+
+		for i := 0; i < len(layoutDetResultNMS); i++ {
+			layoutDetResult := layoutDetResultNMS[i]
+			// 判断是否是图片
+			if layoutDetResult.Label == "image" {
+				xmin := max(0, layoutDetResult.Point[0])
+				ymin := max(0, layoutDetResult.Point[1])
+				xmax := min(originImageW, layoutDetResult.Point[2])
+				ymax := min(originImageH, layoutDetResult.Point[3])
+				boxArea := (xmax - xmin) * (ymax - ymin)
+				// 如果某个 image 框面积接近整张图面积，就把这个框过滤掉
+				if boxArea <= int(areaThres*float64(imgArea)) {
+					filteredBoxes = append(filteredBoxes, layoutDetResult)
+				}
+			} else {
+				filteredBoxes = append(filteredBoxes, layoutDetResult)
+			}
+		}
+	}
+
+	// 结果组装
+	layoutDetResults := restructuredBoxes(
+		filteredBoxes,
+		originImageH,
+		originImageW,
+	)
+	return layoutDetResults, nil
+}
+
+func restructuredBoxes(boxes []common.LayoutDetBox, originImageH, originImageW int) []*common.LayoutDetResult {
+
+	layoutDetResults := make([]*common.LayoutDetResult, 0, len(boxes))
+
+	for i := 0; i < len(boxes); i++ {
+		box := boxes[i]
+		xmin := box.Point[0]
+		ymin := box.Point[1]
+		xmax := box.Point[2]
+		ymax := box.Point[3]
+
+		xmin = max(0, xmin)
+		ymin = max(0, ymin)
+		xmax = min(originImageW, xmax)
+		ymax = min(originImageH, ymax)
+		if xmax <= xmin || ymax <= ymin {
+			continue
+		}
+
+		layoutDetResult := &common.LayoutDetResult{
+			ClsId: box.ClsId,
+			Label: box.Label,
+			Score: box.Score,
+			Order: box.Order,
+			Point: []int{
+				xmin, ymin, xmax, ymax,
+			},
+		}
+		layoutDetResults = append(layoutDetResults, layoutDetResult)
+
+	}
+	return layoutDetResults
 }
