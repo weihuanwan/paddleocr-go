@@ -35,7 +35,7 @@ func NewWiredTableCellsDetOnnxSession(onnxSession *ort.DynamicAdvancedSession) *
 		onnxSession,
 		alpha,
 		beta,
-		[2]int{800, 800},
+		[2]int{640, 640},
 		0.3,
 	}
 }
@@ -74,7 +74,7 @@ func (wiredTableCells *WiredTableCellsDetOnnxSession) Run(originImage *gocv.Mat)
 	}
 
 	defer dataTensor.Destroy()
-	// 3. resize 缩放比例
+	// 3. resize 缩放比例 [[1.6161616  0.89385474]]
 	scaleFactorTensor, err := ort.NewTensor(ort.NewShape(1, 2), scale)
 	if err != nil {
 		return nil, fmt.Errorf("LayoutDetSession scaleFactorTensor input tensor error %w", err.Error())
@@ -82,8 +82,8 @@ func (wiredTableCells *WiredTableCellsDetOnnxSession) Run(originImage *gocv.Mat)
 	defer scaleFactorTensor.Destroy()
 
 	maxDet := int64(300)
-	// 4.输出 最多300个检测框数量，每一个7个值 [ label_index, score, xmin, ymin, xmax, ymax,扩展参数]
-	output0Tensor, err := ort.NewEmptyTensor[float32](ort.NewShape(maxDet, 7))
+	// 4.输出 最多300个检测框数量，每一个6个值 [ label_index, score, xmin, ymin, xmax, ymax]
+	output0Tensor, err := ort.NewEmptyTensor[float32](ort.NewShape(maxDet, 6))
 
 	if err != nil {
 		return nil, fmt.Errorf("LayoutDetSession output0Tensor output tensor error %w", err.Error())
@@ -99,15 +99,8 @@ func (wiredTableCells *WiredTableCellsDetOnnxSession) Run(originImage *gocv.Mat)
 
 	defer output1Tensor.Destroy()
 
-	// 6. 像素级掩码,	最多 300 个检测框,每个框对应一个 200×200 的二值图
-	output2Tensor, err := ort.NewEmptyTensor[int32](ort.NewShape(maxDet, 200, 200))
-	if err != nil {
-		return nil, fmt.Errorf("LayoutDetSession output2Tensor output tensor error %w", err.Error())
-	}
-	defer output2Tensor.Destroy()
-
 	// 检测（核心）
-	err = wiredTableCells.OnnxSession.Run([]ort.Value{imageTensor, dataTensor, scaleFactorTensor}, []ort.Value{output0Tensor, output1Tensor, output2Tensor})
+	err = wiredTableCells.OnnxSession.Run([]ort.Value{imageTensor, dataTensor, scaleFactorTensor}, []ort.Value{output0Tensor, output1Tensor})
 	if err != nil {
 		return nil, fmt.Errorf("LayoutDetSession OnnxSession.Run() error %w", err.Error())
 	}
