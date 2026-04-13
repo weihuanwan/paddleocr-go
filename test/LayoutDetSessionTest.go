@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"log"
 
+	"github.com/weihuanwan/paddleocr-go/common"
 	"github.com/weihuanwan/paddleocr-go/layout"
 	"github.com/weihuanwan/paddleocr-go/ocr"
 	ort "github.com/yalue/onnxruntime_go"
@@ -87,7 +88,7 @@ func main() {
 	gocv.IMWrite("layout_result.jpg", originImage1)
 	for i := 0; i < len(layoutDetResults); i++ {
 		layoutDet := layoutDetResults[i]
-		cropImage, err := layout.CropByBoxes(layoutDet, imageMat)
+		cropImage, err := common.CropByBoxes(layoutDet, imageMat)
 		if err != nil {
 			panic(err)
 		}
