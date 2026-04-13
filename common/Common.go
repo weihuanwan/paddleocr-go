@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"sort"
 
 	"gocv.io/x/gocv"
 )
@@ -105,4 +106,135 @@ func GetNormalizeAlphaBeta() ([3]float32, [3]float32) {
 	}
 
 	return alpha, beta
+}
+
+/*
+解决同一个区域出现多个标签问题，取最高的，过滤最低的
+*/
+func NMSLayout(boxes []LayoutDetBox, iouSame, iouDiff float64) []LayoutDetBox {
+
+	if len(boxes) == 0 {
+		return boxes
+	}
+
+	// 对应 从大到小 排序
+	sort.Slice(boxes, func(i, j int) bool {
+		return boxes[i].Score > boxes[j].Score
+	})
+
+	var selected []LayoutDetBox
+
+	// 对应 Python: while len(indices) > 0
+	for len(boxes) > 0 {
+
+		// current = indices[0]
+		currentBox := boxes[0]
+		// 当前的添加进去
+		selected = append(selected, currentBox)
+
+		var remaining []LayoutDetBox
+
+		// for i in indices:
+		for i := 1; i < len(boxes); i++ {
+			// 获取下一个
+			nextBox := boxes[i]
+
+			// box_class
+			nextBoxClass := nextBox.ClsId
+			currentClass := currentBox.ClsId
+
+			// iou
+			iouValue := IoU(currentBox, nextBox)
+
+			// threshold = iou_same if same class else iou_diff
+			threshold := iouDiff
+			// 判断类型是否一致
+			if currentClass == nextBoxClass {
+				// 如果类型是一致 使用0.6
+				threshold = iouSame
+			}
+
+			// if iou < threshold → keep
+			if iouValue < threshold {
+				remaining = append(remaining, nextBox)
+			}
+		}
+
+		boxes = remaining
+	}
+
+	return selected
+}
+
+func IoU(a, b LayoutDetBox) float64 {
+
+	/**
+	框 A                框 B
+	(x1,y1)             (x1p,y1p)
+	   ┌────────┐
+	   │    A   │
+	   │    ┌────────┐
+	   │    │   B    │
+	   └────┴────────┘
+			(x2,y2)   (x2p,y2p)
+
+	┌──────────────┐
+	│              │
+	│      A       │
+	│      ┌──────────────┐
+	│      │重叠区域 |     │
+	└──────┴──────────────┘
+	       │       B      │
+	       └──────────────┘
+	*/
+	//minX := box.Point[0].X
+	//minY := box.Point[0].Y
+	//maxX := box.Point[1].X
+	//maxY := box.Point[1].Y
+	//
+	//boxW, boxH := maxX-minX, maxY-minY
+	//
+	//// 默认矩形（四个顶点，顺序：左上、右上、右下、左下）
+	//rect := []image.Point{
+	//	{minX, minY},
+	//	{maxX, minY},
+	//	{maxX, maxY},
+	//	{minX, maxY},
+	//}
+
+	//取坐标
+
+	x1 := float64(a.Point[0])
+	y1 := float64(a.Point[1])
+	x2 := float64(a.Point[2])
+	y2 := float64(a.Point[3])
+
+	x1p := float64(b.Point[0])
+	y1p := float64(b.Point[1])
+	x2p := float64(b.Point[2])
+	y2p := float64(b.Point[3])
+
+	// intersection
+	x1i := math.Max(x1, x1p)
+	y1i := math.Max(y1, y1p)
+
+	x2i := math.Min(x2, x2p)
+	y2i := math.Min(y2, y2p)
+
+	// 计算交集面积
+	interW := math.Max(0, x2i-x1i+1)
+	interH := math.Max(0, y2i-y1i+1)
+	interArea := interW * interH
+	// 计算两个框各自面积
+	area1 := (x2 - x1 + 1) * (y2 - y1 + 1)
+	area2 := (x2p - x1p + 1) * (y2p - y1p + 1)
+
+	// 并集面积
+	union := area1 + area2 - interArea
+	if union <= 0 {
+		return 0
+	}
+	// 交集面积 / 并集面积
+
+	return interArea / union
 }
