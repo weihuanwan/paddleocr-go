@@ -44,7 +44,7 @@ func NewWiredTableCellsDetOnnxSession(onnxSession *ort.DynamicAdvancedSession) *
 	}
 }
 
-func (wiredTableCells *WiredTableCellsDetOnnxSession) Run(originImage *gocv.Mat) ([]*TableCellsDetResult, error) {
+func (wiredTableCells *WiredTableCellsDetOnnxSession) Run(originImage *gocv.Mat) ([]*common.LayoutDetResult, error) {
 	// 缩放
 	resizedImage, scale, err := common.Resize(originImage, wiredTableCells.Resize)
 	if err != nil {
@@ -109,24 +109,24 @@ func (wiredTableCells *WiredTableCellsDetOnnxSession) Run(originImage *gocv.Mat)
 		return nil, fmt.Errorf("LayoutDetSession OnnxSession.Run() error %w", err.Error())
 	}
 
-	return nil, err
+	// 处理结果
+	layoutDetResult, err := wiredTableCells.formatOutput(
+		output0Tensor.GetData(),
+		output1Tensor.GetData(),
+		originImage.Rows(),
+		originImage.Cols(),
+		scale)
+	return layoutDetResult, err
 }
-func (wiredTableCells *WiredTableCellsDetOnnxSession) formatOutput(boxes []float32, count []int32,
-	masks []int32, originImageH int, originImageW int,
+func (wiredTableCells *WiredTableCellsDetOnnxSession) formatOutput(boxes []float32, count []int32, originImageH int, originImageW int,
 	scale []float32) ([]*common.LayoutDetResult, error) {
 
-	step := 7
-	maskSize := 200 * 200
+	step := 6
 	layoutDetBoxs := make([]common.LayoutDetBox, 0)
 	// 1. 处理图片
 	for i := 0; i < len(boxes); i += step {
-
 		if boxes[i+0] > -1 && boxes[i+1] > wiredTableCells.Threshold {
-			detIndex := i / step
-			maskStart := detIndex * maskSize
-			maskEnd := maskStart + maskSize
-			// 获取像素级掩码
-			mask := masks[maskStart:maskEnd]
+
 			clsId := int(boxes[i])
 			score := boxes[i+1]
 			// 取这个位置的
@@ -140,7 +140,6 @@ func (wiredTableCells *WiredTableCellsDetOnnxSession) formatOutput(boxes []float
 				Score: score,
 				Label: wiredTableCells.Labels[clsId],
 				Point: [4]int{xmin, ymin, xmax, ymax},
-				Mask:  mask,
 			}
 			layoutDetBoxs = append(layoutDetBoxs, layoutDetResult)
 		}
