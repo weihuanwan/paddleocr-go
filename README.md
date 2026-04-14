@@ -10,7 +10,7 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
    - 版本：onnxruntime-xxx-1.24.1
 3. 准备 PaddleOCR ONNX  模型
    - 地址1：https://github.com/PaddlePaddle/PaddleOCR
-   - 地址2：https://github.com/weihuanwan/paddle-ocr-model
+   - 地址2：https://huggingface.co/weihuanwan
 
 # 快速开始
 
