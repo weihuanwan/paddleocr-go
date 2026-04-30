@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"sync"
 
 	"github.com/weihuanwan/paddleocr-go/common"
 	"github.com/weihuanwan/paddleocr-go/layout"
@@ -16,9 +15,10 @@ import (
 )
 
 type PaddleOCRVL struct {
-	Model string            // 模型名称
-	Url   string            // 请求路径
-	Tasks map[string]string //任务类型
+	Model  string            // 模型名称
+	Url    string            // 请求路径
+	ApiKey string            // 请求路径
+	Tasks  map[string]string //任务类型
 
 	LayoutDetSession *layout.LayoutDetSession //版面分析模型
 }
@@ -115,6 +115,7 @@ type Usage struct {
 func NewDefaultPaddleOCRVL(
 	model string,
 	url string,
+	apiKey string,
 	layoutDetSession *layout.LayoutDetSession,
 
 ) *PaddleOCRVL {
@@ -129,6 +130,7 @@ func NewDefaultPaddleOCRVL(
 	paddleOCRVL := &PaddleOCRVL{
 		model,
 		url,
+		apiKey,
 		tasks,
 		layoutDetSession,
 	}
@@ -158,120 +160,45 @@ func (session *PaddleOCRVL) RunOCR(imagePath string) ([]*PaddleOCRVLBlock, error
 	return paddleOCRVLBlocks, nil
 }
 
-type layoutTask struct {
-	index     int
-	detResult *common.LayoutDetResult
-}
-
-type layoutResult struct {
-	index int
-	block *PaddleOCRVLBlock
-	err   error
-}
-
 func (session *PaddleOCRVL) getLayoutParsingResults(
 	layoutDetResult []*common.LayoutDetResult,
 	originImage *gocv.Mat,
 ) []*PaddleOCRVLBlock {
 
 	filterLayoutDetResult := filterOverlapBoxes(layoutDetResult, "auto")
+	final := make([]*PaddleOCRVLBlock, 0, len(filterLayoutDetResult))
+	for i := 0; i < len(filterLayoutDetResult); i++ {
+		detResult := filterLayoutDetResult[i]
 
-	taskCh := make(chan layoutTask, len(filterLayoutDetResult))
-	resultCh := make(chan layoutResult, len(filterLayoutDetResult))
+		cropImage, err := common.CropByBoxes(detResult, originImage)
 
-	workerNum := 8 // 👈 可调：CPU + 网络决定（一般 4~16）
+		base64Str, err := MatToBase64(cropImage)
 
-	var wg sync.WaitGroup
+		req := NewChatCompletionRequest(
+			session.Model,
+			base64Str,
+			session.getTask(detResult.Label),
+		)
 
-	// worker
-	for w := 0; w < workerNum; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			for task := range taskCh {
-
-				detResult := task.detResult
-
-				cropImage, err := common.CropByBoxes(detResult, originImage)
-				if err != nil {
-					resultCh <- layoutResult{index: task.index, err: err}
-					continue
-				}
-
-				base64Str, err := MatToBase64(cropImage)
-				if err != nil {
-					resultCh <- layoutResult{index: task.index, err: err}
-					continue
-				}
-
-				req := NewChatCompletionRequest(
-					session.Model,
-					base64Str,
-					session.getTask(detResult.Label),
-				)
-
-				resp, err := session.Run(req)
-				if err != nil {
-					resultCh <- layoutResult{index: task.index, err: err}
-					continue
-				}
-
-				ocrResult := resp.Choices[0].Message.Content
-				text := ocrResult
-
-				if detResult.Label == "table" {
-					text = ConvertOtslToHtml(ocrResult)
-				}
-
-				block := &PaddleOCRVLBlock{
-					LayoutDetResult: detResult,
-					OcrResult:       ocrResult,
-					Text:            text,
-				}
-
-				resultCh <- layoutResult{
-					index: task.index,
-					block: block,
-				}
-			}
-		}()
-	}
-
-	// 投递任务
-	go func() {
-		for i, det := range filterLayoutDetResult {
-			taskCh <- layoutTask{
-				index:     i,
-				detResult: det,
-			}
-		}
-		close(taskCh)
-	}()
-
-	// 等待 worker 结束
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
-
-	// 收集结果（保序）
-	results := make([]*PaddleOCRVLBlock, len(filterLayoutDetResult))
-
-	for r := range resultCh {
-		if r.err != nil {
-			fmt.Printf("error index=%d err=%v\n", r.index, r.err)
+		resp, err := session.Run(req)
+		if err != nil {
 			continue
 		}
-		results[r.index] = r.block
-	}
 
-	// 去 nil
-	final := make([]*PaddleOCRVLBlock, 0, len(results))
-	for _, v := range results {
-		if v != nil {
-			final = append(final, v)
+		ocrResult := resp.Choices[0].Message.Content
+		text := ocrResult
+
+		if detResult.Label == "table" {
+			text = ConvertOtslToHtml(ocrResult)
 		}
+
+		block := &PaddleOCRVLBlock{
+			LayoutDetResult: detResult,
+			OcrResult:       ocrResult,
+			Text:            text,
+		}
+		final = append(final, block)
+
 	}
 
 	return final
@@ -487,6 +414,7 @@ func (session *PaddleOCRVL) Run(request ChatCompletionRequest) (*ChatCompletionR
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+session.ApiKey)
 
 	// 6️⃣ 发请求
 	client := &http.Client{}
@@ -500,6 +428,10 @@ func (session *PaddleOCRVL) Run(request ChatCompletionRequest) (*ChatCompletionR
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read body error %s  %s", session.Url, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("请求失败")
 	}
 	var result ChatCompletionResponse
 	err = json.Unmarshal(body, &result)

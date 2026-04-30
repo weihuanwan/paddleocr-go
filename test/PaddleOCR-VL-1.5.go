@@ -32,7 +32,7 @@ func main() {
 	docLayoutSession := layout.NewLayoutDetSession(layoutDetSessionInternal)
 
 	paddleOCRVL := ocr.NewDefaultPaddleOCRVL("PaddlePaddle/PaddleOCR-VL-1.5",
-		"http://localhost:8000/v1/chat/completions", docLayoutSession)
+		"https://api.siliconflow.cn/v1/chat/completions", "sk-ufajxhcyibsxcatybmjqhaierwwbbxjdrhwitcmrscyodhsq", docLayoutSession)
 
 	imagePath := "test/images/word.png"
 	//
