@@ -240,7 +240,7 @@ func IoU(a, b LayoutDetBox) float64 {
 
 	return interArea / union
 }
-func CropByBoxes(layoutDet *LayoutDetResult, imageMat gocv.Mat) (*gocv.Mat, error) {
+func CropByBoxes(layoutDet *LayoutDetResult, imageMat *gocv.Mat) (*gocv.Mat, error) {
 	// 参数校验
 	if layoutDet == nil {
 		return nil, errors.New("layoutDet is nil")
