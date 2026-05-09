@@ -1,6 +1,7 @@
 package ocr
 
 import (
+	"fmt"
 	"html"
 	"regexp"
 	"strconv"
@@ -63,6 +64,7 @@ type TableData struct {
 */
 func ConvertOtslToHtml(ocrResult string) string {
 
+	fmt.Printf(ocrResult)
 	newResult := otslPadToSqrV2(ocrResult)
 	tokens, textParts := extractTokensAndText(newResult)
 	tableCells, splitRowTokens := otslParseTexts(textParts, tokens)
@@ -380,11 +382,7 @@ func contains(arr []string, target string) bool {
 }
 
 /*
-*
-完全等价 Python:
-
-def otsl_pad_to_sqr_v2(otsl_str: str) -> str:
-*/
+ */
 func otslPadToSqrV2(otslStr string) string {
 
 	// otsl_str = otsl_str.strip()
@@ -395,7 +393,7 @@ func otslPadToSqrV2(otslStr string) string {
 		return otslStr + OTSL_NL
 	}
 
-	// lines = otsl_str.split(OTSL_NL)
+	// 分割行
 	lines := strings.Split(otslStr, OTSL_NL)
 
 	var rowData []RowData
@@ -407,7 +405,7 @@ func otslPadToSqrV2(otslStr string) string {
 			continue
 		}
 
-		// raw_cells = OTSL_FIND_PATTERN.findall(line)
+		// 根据  标签分割
 		rawCells := splitOTSL(line)
 
 		// if not raw_cells:
@@ -421,18 +419,15 @@ func otslPadToSqrV2(otslStr string) string {
 		// min_len = 0
 		minLen := 0
 
-		// for i, cell_str in enumerate(raw_cells):
 		for i, cellStr := range rawCells {
 
 			// if cell_str.startswith(OTSL_FCEL):
 			if strings.HasPrefix(cellStr, OTSL_FCEL) {
 
-				// min_len = i + 1
 				minLen = i + 1
 			}
 		}
 
-		// row_data.append(...)
 		rowData = append(rowData, RowData{
 			RawCells: rawCells,
 			TotalLen: totalLen,
@@ -440,15 +435,10 @@ func otslPadToSqrV2(otslStr string) string {
 		})
 	}
 
-	// if not row_data:
 	if len(rowData) == 0 {
 		return OTSL_NL
 	}
 
-	/*
-		global_min_width =
-		max(row["min_len"] for row in row_data)
-	*/
 	globalMinWidth := 0
 	maxTotalLen := 0
 	for _, row := range rowData {
@@ -464,19 +454,14 @@ func otslPadToSqrV2(otslStr string) string {
 		)
 	}
 
-	// search_start = global_min_width
 	searchStart := globalMinWidth
-
-	// search_end = max(global_min_width, max_total_len)
 	searchEnd := max(
 		globalMinWidth,
 		maxTotalLen,
 	)
 
-	// min_total_cost = float("inf")
 	minTotalCost := int(^uint(0) >> 1)
 
-	// optimal_width = search_end
 	optimalWidth := searchEnd
 
 	/*
@@ -502,10 +487,8 @@ func otslPadToSqrV2(otslStr string) string {
 
 	for _, row := range rowData {
 
-		// cells = row["raw_cells"]
 		cells := row.RawCells
 
-		// current_len = len(cells)
 		currentLen := len(cells)
 
 		var newCells []string
@@ -535,9 +518,6 @@ func otslPadToSqrV2(otslStr string) string {
 		)
 	}
 
-	/*
-		return OTSL_NL.join(repaired_lines) + OTSL_NL
-	*/
 	return strings.Join(
 		repairedLines,
 		OTSL_NL,
@@ -546,8 +526,7 @@ func otslPadToSqrV2(otslStr string) string {
 
 /*
 *
-替代 Python regex findall
-*/
+ */
 func splitOTSL(line string) []string {
 
 	var result []string
@@ -569,15 +548,12 @@ func splitOTSL(line string) []string {
 			if strings.HasPrefix(line[i:], tag) {
 
 				if start != -1 {
-
 					result = append(
 						result,
 						line[start:i],
 					)
 				}
-
 				start = i
-
 				break
 			}
 		}

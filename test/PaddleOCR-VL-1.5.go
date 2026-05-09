@@ -32,9 +32,9 @@ func main() {
 	docLayoutSession := layout.NewLayoutDetSession(layoutDetSessionInternal)
 
 	paddleOCRVL := ocr.NewDefaultPaddleOCRVL("PaddlePaddle/PaddleOCR-VL-1.5",
-		"https://api.siliconflow.cn/v1/chat/completions", "sk-ufajxhcyibsxcatybmjqhaierwwbbxjdrhwitcmrscyodhsq", docLayoutSession)
+		"http://localhost:8000/v1/chat/completions", "sk-ufajxhcyibsxcatybmjqhaierwwbbxjdrhwitcmrscyodhsq", docLayoutSession)
 
-	imagePath := "test/images/word.png"
+	imagePath := "test/images/img.png"
 	//
 	//imageMat := gocv.IMRead(imagePath, gocv.IMReadColor)
 	//defer imageMat.Close()
@@ -54,3 +54,5 @@ func main() {
 	// 8️⃣ 输出结果
 	//fmt.Println(result)
 }
+
+//
