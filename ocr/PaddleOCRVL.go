@@ -173,7 +173,7 @@ func (session *PaddleOCRVL) getLayoutParsingResults(
 		cropImage, err := common.CropByBoxes(detResult, originImage)
 
 		base64Str, err := MatToBase64(cropImage)
-
+		cropImage.Close()
 		req := NewChatCompletionRequest(
 			session.Model,
 			base64Str,
