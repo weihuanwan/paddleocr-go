@@ -1,7 +1,6 @@
 package ocr
 
 import (
-	"fmt"
 	"html"
 	"regexp"
 	"strconv"
@@ -63,8 +62,6 @@ type TableData struct {
 转化表格的html
 */
 func ConvertOtslToHtml(ocrResult string) string {
-
-	fmt.Printf(ocrResult)
 	newResult := otslPadToSqrV2(ocrResult)
 	tokens, textParts := extractTokensAndText(newResult)
 	tableCells, splitRowTokens := otslParseTexts(textParts, tokens)
