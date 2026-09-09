@@ -3,12 +3,36 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
 
 # 环境准备
 
-1. 安装 msys2 和 编译gocv
+**注意**：按照 gocv 官方文档安装的 MinGW-W64 与 CMake 环境会与 `github.com/gen2brain/go-fitz` 依赖产生冲突。因此，请勿参照 gocv 官网指南进行安装，必须统一使用 MSYS2 来安装 MinGW-W64 和 CMake。
+
+1. 安装 msys2 和 编译 gocv
    - msys2 地址：https://www.msys2.org
+   
+     1. 打开 ucrt64.exe 命令窗口
+   
+        - pacman -Syu
+        - pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-make
+   
+     2. 验证
+   
+        > gcc --version
+        > cmake --version
+   
    - gocv 地址 ：https://gocv.io/getting-started
+   
+     - .\win_download_opencv.cmd
+   
+     - .\win_build_opencv.cmd
+   
+     - go run cmd\version\main.go
+   
+       > gocv version: 0.43.0
+       > opencv lib version: 4.13.0
+   
 3. 下载 onnxruntime
    - 地址：https://github.com/microsoft/onnxruntime
-   - 版本：onnxruntime-xxx-1.24.1
+   - 版本：onnxruntime-xxx-1.29.0
+   
 4. 准备 PaddleOCR ONNX  模型
    - 地址1：https://huggingface.co/weihuanwan
 # 快速开始

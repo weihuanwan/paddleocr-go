@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/bolom009/go-clipper2 v1.3.0
 	github.com/gen2brain/go-fitz v1.28.2
-	github.com/yalue/onnxruntime_go v1.27.0
+	github.com/yalue/onnxruntime_go v1.36.0
 	gocv.io/x/gocv v0.43.0
 	golang.org/x/net v0.57.0
 )
