@@ -11,28 +11,32 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
      1. 打开 ucrt64.exe 命令窗口
    
         - pacman -Syu
-        - pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-make
+        - pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-libavif
+        - 把安装目录配置到系统环境变量中
+          1. 新增 MSYS2_HOME
+             - D:\msys2\ucrt64
+          2. 新增Path
+             - %MSYS2_HOME%\bin
    
-     2. 配置环境变量
-   
-        - 新增 MSYS2_HOME
-          - D:\msys2\ucrt64
-        - 新增Path
-          - %MSYS2_HOME%\bin
-   
-     3. 验证
+     3. 验证环境
    
         > gcc --version
         > cmake --version
    
    - gocv 地址 ：https://gocv.io/getting-started
    
-     1. .\win_download_opencv.cmd
-     2. .\win_build_opencv.cmd
-     3. 构建成功之后
+     **注意：不要去下载安装 gocv 官方推荐的 MinGW-W64 和 CMake，官方环境和 github.com/gen2brain/go-fitz 环境依赖起冲突，一定要使用 msys2  安装！！！**
+     
+     1. git clone https://github.com/hybridgroup/gocv.git
+     
+     2. .\win_download_opencv.cmd
+     
+     3. .\win_build_opencv.cmd
+     
+     4. 构建成功之后
         - 把 C:\opencv\build\install\x64\mingw\bin 配置到环境变量中
      
-     4. go run cmd\version\main.go
+     5. go run cmd\version\main.go
      
         > exit status 0xc0000135 
      
@@ -42,8 +46,8 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
         **解决问题：**
      
         - **进入 C:\opencv\build\install\x64\mingw\bin 目录找到 libavif-16.dll 文件复制一份出来重新命名为  libavif.dll**
+        - **最后执行 go run cmd\version\main.go 命令验证**
      
-     - **注意：不要去下载安装 gocv 官方推荐的 MinGW-W64 和 CMake，官方环境和 github.com/gen2brain/go-fitz 环境依赖起冲突，一定要使用 msys2  安装！！！**
    
 3. 下载 onnxruntime
    - 地址：https://github.com/microsoft/onnxruntime
