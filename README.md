@@ -19,14 +19,12 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
              - %MSYS2_HOME%\bin
    
      3. 验证环境
-   
-        > gcc --version
-        > cmake --version
+
+        - cmake --version
+        - gcc --version 
    
    - gocv 地址 ：https://gocv.io/getting-started
-   
-     **注意：不要去下载安装 gocv 官方推荐的 MinGW-W64 和 CMake，官方环境和 github.com/gen2brain/go-fitz 环境依赖起冲突，一定要使用 msys2  安装！！！**
-     
+
      1. git clone https://github.com/hybridgroup/gocv.git
      
      2. .\win_download_opencv.cmd
