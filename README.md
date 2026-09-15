@@ -11,23 +11,39 @@ paddleocr-go 是一个面向 Go 生态的高性能 OCR 工具库，基于 ONNX R
      1. 打开 ucrt64.exe 命令窗口
    
         - pacman -Syu
-        - pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-make
+        - pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-make
    
-     2. 验证
+     2. 配置环境变量
+   
+        - 新增 MSYS2_HOME
+          - D:\msys2\ucrt64
+        - 新增Path
+          - %MSYS2_HOME%\bin
+   
+     3. 验证
    
         > gcc --version
         > cmake --version
    
    - gocv 地址 ：https://gocv.io/getting-started
    
-     - .\win_download_opencv.cmd
-   
-     - .\win_build_opencv.cmd
-   
-     - go run cmd\version\main.go
-   
-       > gocv version: 0.43.0
-       > opencv lib version: 4.13.0
+     1. .\win_download_opencv.cmd
+     2. .\win_build_opencv.cmd
+     3. 构建成功之后
+        - 把 C:\opencv\build\install\x64\mingw\bin 配置到环境变量中
+     
+     4. go run cmd\version\main.go
+     
+        > exit status 0xc0000135 
+     
+        出现这个问题 命令控制台进入 **C:\opencv\build\install\x64\mingw\bin** 目录然后执行 **./opencv_annotation.exe**  程序
+        会出现 **由于找不到 avif.dll，无法继续执行代码** 错误
+     
+        **解决问题：**
+     
+        - **进入 C:\opencv\build\install\x64\mingw\bin 目录找到 libavif-16.dll 文件复制一份出来重新命名为  libavif.dll**
+     
+     - **注意：不要去下载安装 gocv 官方推荐的 MinGW-W64 和 CMake，官方环境和 github.com/gen2brain/go-fitz 环境依赖起冲突，一定要使用 msys2  安装！！！**
    
 3. 下载 onnxruntime
    - 地址：https://github.com/microsoft/onnxruntime
