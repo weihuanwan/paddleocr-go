@@ -153,8 +153,8 @@ func renderPDFPage(doc *fitz.Document, page int) (gocv.Mat, error) {
 	if page < 0 || page >= doc.NumPage() {
 		return gocv.NewMat(), fmt.Errorf("PDF page out of range: page=%d, total=%d", page, doc.NumPage())
 	}
-
-	img, err := doc.Image(page)
+	// ~2480 × 3500
+	img, err := doc.ImageDPI(page, 300.0)
 	if err != nil {
 		return gocv.NewMat(), fmt.Errorf("render PDF page %d failed: %w", page+1, err)
 	}
