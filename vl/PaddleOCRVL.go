@@ -206,7 +206,7 @@ func (session *PaddleOCRVL) getLayoutParsingResults(
 
 		resp, err := session.Run(req)
 		if err != nil {
-			log.Fatalf("Error PaddleOCRVL Run: %v", err)
+			log.Printf("Error PaddleOCRVL Run: %v", err)
 			continue
 		}
 
